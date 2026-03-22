@@ -1,0 +1,57 @@
+{
+  "name": "figmanage",
+  "mcpName": "io.github.dannykeane/figmanage",
+  "version": "1.4.2",
+  "description": "MCP server for managing your Figma workspace from the terminal.",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "figmanage": "dist/index.js"
+  },
+  "files": [
+    "dist/**/*.js",
+    "dist/**/*.d.ts",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/index.js",
+    "setup": "node dist/setup.js",
+    "lint": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "keywords": [
+    "figma",
+    "mcp",
+    "figmanage",
+    "workspace",
+    "admin",
+    "management",
+    "figma-manager"
+  ],
+  "author": "Danny Keane",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dannykeane/figmanage.git"
+  },
+  "homepage": "https://github.com/dannykeane/figmanage#readme",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.0",
+    "axios": "^1.13.5",
+    "axios-retry": "^4.4.0",
+    "commander": "^14.0.3",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^4.1.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
