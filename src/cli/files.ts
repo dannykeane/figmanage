@@ -1,16 +1,15 @@
 import { Command } from 'commander';
 import {
   createFile,
-  renameFile,
-  moveFiles,
   duplicateFile,
-  trashFiles,
-  restoreFiles,
   favoriteFile,
+  moveFiles,
+  renameFile,
+  restoreFiles,
   setLinkAccess,
+  trashFiles,
 } from '../operations/files.js';
-import { output, error } from './format.js';
-import { formatApiError } from '../helpers.js';
+import { fail, output } from './format.js';
 import { requireCookie } from './helpers.js';
 
 export function filesCommand(): Command {
@@ -37,8 +36,7 @@ export function filesCommand(): Command {
         });
         output(result, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -53,8 +51,7 @@ export function filesCommand(): Command {
         await renameFile(config, { file_key: fileKey, name: options.name });
         output({ renamed: fileKey, name: options.name }, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -77,8 +74,7 @@ export function filesCommand(): Command {
         });
         output(result, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -96,8 +92,7 @@ export function filesCommand(): Command {
         });
         output(result, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -111,14 +106,12 @@ export function filesCommand(): Command {
         const config = requireCookie();
         const { confirmAction } = await import('./helpers.js');
         if (!await confirmAction(`Trash ${options.fileKeys.length} file(s)?`)) {
-          console.log('Cancelled.');
-          return;
+          throw new Error('Cancelled. No changes made.');
         }
         const result = await trashFiles(config, { file_keys: options.fileKeys });
         output(result, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -133,8 +126,7 @@ export function filesCommand(): Command {
         const result = await restoreFiles(config, { file_keys: options.fileKeys });
         output(result, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -152,8 +144,7 @@ export function filesCommand(): Command {
         });
         output(result, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -171,8 +162,7 @@ export function filesCommand(): Command {
         });
         output(result, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 

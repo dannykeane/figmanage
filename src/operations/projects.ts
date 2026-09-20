@@ -1,3 +1,4 @@
+import { validateInput } from '../validation.js';
 import type { AuthConfig } from '../auth/client.js';
 import { internalClient } from '../clients/internal-api.js';
 
@@ -11,6 +12,7 @@ export async function createProject(
   config: AuthConfig,
   params: { team_id: string; name: string },
 ): Promise<CreatedProject> {
+  validateInput('create_project', params);
   const res = await internalClient(config).post('/api/folders', {
     team_id: params.team_id,
     path: params.name,
@@ -30,6 +32,7 @@ export async function renameProject(
   config: AuthConfig,
   params: { project_id: string; name: string },
 ): Promise<void> {
+  validateInput('rename_project', params);
   await internalClient(config).put('/api/folders/rename', {
     folder_id: params.project_id,
     name: params.name,
@@ -40,6 +43,7 @@ export async function moveProject(
   config: AuthConfig,
   params: { project_id: string; destination_team_id: string },
 ): Promise<void> {
+  validateInput('move_project', params);
   await internalClient(config).put('/api/folders/move', {
     folder_id: params.project_id,
     team_id: params.destination_team_id,
@@ -50,6 +54,7 @@ export async function trashProject(
   config: AuthConfig,
   params: { project_id: string },
 ): Promise<void> {
+  validateInput('trash_project', params);
   await internalClient(config).put(`/api/folders/trash/${params.project_id}`);
 }
 
@@ -57,6 +62,7 @@ export async function restoreProject(
   config: AuthConfig,
   params: { project_id: string },
 ): Promise<void> {
+  validateInput('restore_project', params);
   await internalClient(config).put(`/api/folders/restore/${params.project_id}`);
 }
 
@@ -64,6 +70,7 @@ export async function setProjectDescription(
   config: AuthConfig,
   params: { project_id: string; description: string },
 ): Promise<void> {
+  validateInput('set_project_description', params);
   await internalClient(config).put(`/api/folders/${params.project_id}/description`, {
     description: params.description,
   });

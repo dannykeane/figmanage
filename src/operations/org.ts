@@ -1,3 +1,4 @@
+import { validateInput } from '../validation.js';
 import type { AuthConfig } from '../auth/client.js';
 import { internalClient } from '../clients/internal-api.js';
 
@@ -62,6 +63,7 @@ export async function listAdmins(
   config: AuthConfig,
   params: { org_id?: string; include_license_admins?: boolean },
 ): Promise<Admin[]> {
+  validateInput('list_admins', params);
   const orgId = requireOrgId(config, params.org_id);
   const res = await internalClient(config).get(
     `/api/orgs/${orgId}/admins`,
@@ -90,6 +92,7 @@ export async function listOrgTeams(
   config: AuthConfig,
   params: { org_id?: string; include_secret_teams?: boolean },
 ): Promise<OrgTeam[]> {
+  validateInput('list_org_teams', params);
   const orgId = requireOrgId(config, params.org_id);
   const res = await internalClient(config).get(
     `/api/orgs/${orgId}/teams`,
@@ -116,6 +119,7 @@ export async function seatUsage(
   config: AuthConfig,
   params: { org_id?: string; search_query?: string },
 ): Promise<any> {
+  validateInput('seat_usage', params);
   const orgId = requireOrgId(config, params.org_id);
   const reqParams: Record<string, string> = {};
   if (params.search_query) reqParams.search_query = params.search_query;
@@ -141,6 +145,7 @@ export async function listTeamMembers(
   config: AuthConfig,
   params: { team_id: string },
 ): Promise<TeamMember[]> {
+  validateInput('list_team_members', params);
   const res = await internalClient(config).get(`/api/teams/${params.team_id}/members`);
   return (res.data?.meta || res.data || []).map((m: any) => ({
     id: m.id,
@@ -158,6 +163,7 @@ export async function billingOverview(
   config: AuthConfig,
   params: { org_id?: string },
 ): Promise<any> {
+  validateInput('billing_overview', params);
   const orgId = requireOrgId(config, params.org_id);
   const res = await internalClient(config).get(`/api/orgs/${orgId}/billing_data`);
   const data = res.data?.meta || res.data;
@@ -169,6 +175,7 @@ export async function listInvoices(
   config: AuthConfig,
   params: { org_id?: string },
 ): Promise<Record<string, any>> {
+  validateInput('list_invoices', params);
   const orgId = requireOrgId(config, params.org_id);
   const client = internalClient(config);
   const [openResult, upcomingResult] = await Promise.allSettled([
@@ -188,6 +195,7 @@ export async function orgDomains(
   config: AuthConfig,
   params: { org_id?: string },
 ): Promise<Record<string, any>> {
+  validateInput('org_domains', params);
   const orgId = requireOrgId(config, params.org_id);
   const client = internalClient(config);
   const [domainsResult, ssoResult] = await Promise.allSettled([
@@ -207,6 +215,7 @@ export async function aiCreditUsage(
   config: AuthConfig,
   params: { team_id: string; plan_id?: string },
 ): Promise<any> {
+  validateInput('ai_credit_usage', params);
   const client = internalClient(config);
   const planId = params.plan_id || await resolvePlanId(client, params.team_id);
   const res = await client.get(`/api/plans/${planId}/ai_credits/plan_usage_summary`);
@@ -217,6 +226,7 @@ export async function exportMembers(
   config: AuthConfig,
   params: { org_id?: string },
 ): Promise<string> {
+  validateInput('export_members', params);
   const orgId = requireOrgId(config, params.org_id);
   await internalClient(config).post(`/api/orgs/${orgId}/export_members`);
   return 'CSV export queued. It will be emailed to the org admin.';
@@ -236,6 +246,7 @@ export async function listOrgMembers(
   config: AuthConfig,
   params: { org_id?: string; search_query?: string },
 ): Promise<OrgMember[]> {
+  validateInput('list_org_members', params);
   const orgId = requireOrgId(config, params.org_id);
   const reqParams: Record<string, string> = {};
   if (params.search_query) reqParams.search_query = params.search_query;
@@ -265,6 +276,7 @@ export async function contractRates(
   config: AuthConfig,
   params: { org_id?: string },
 ): Promise<ContractRate[]> {
+  validateInput('contract_rates', params);
   const orgId = requireOrgId(config, params.org_id);
   const res = await internalClient(config).get(
     `/api/pricing/contract_rates`,
@@ -292,6 +304,7 @@ export async function changeSeat(
   config: AuthConfig,
   params: { user_id: string; seat_type: string; org_id?: string; confirm?: boolean },
 ): Promise<ChangeSeatResult | string> {
+  validateInput('change_seat', params);
   const orgId = requireOrgId(config, params.org_id);
 
   const res = await internalClient(config).get(`/api/v2/orgs/${orgId}/org_users`, {
@@ -365,6 +378,7 @@ export async function activityLog(
   config: AuthConfig,
   params: { org_id?: string; emails?: string; start_time?: string; end_time?: string; page_size?: number; after?: string },
 ): Promise<ActivityLogResult> {
+  validateInput('activity_log', params);
   const orgId = requireOrgId(config, params.org_id);
   const now = new Date();
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
@@ -405,6 +419,7 @@ export async function listPayments(
   config: AuthConfig,
   params: { org_id?: string },
 ): Promise<any[]> {
+  validateInput('list_payments', params);
   const orgId = requireOrgId(config, params.org_id);
   const res = await internalClient(config).get(
     `/api/orgs/${orgId}/billing_data`,
@@ -419,6 +434,7 @@ export async function removeOrgMember(
   config: AuthConfig,
   params: { user_identifier: string; org_id?: string; confirm?: boolean },
 ): Promise<string> {
+  validateInput('remove_org_member', params);
   if (!params.confirm) {
     throw new Error(
       'Removing a member from the org is permanent and cannot be undone. ' +
@@ -473,6 +489,7 @@ export async function createUserGroup(
     should_notify?: boolean;
   },
 ): Promise<CreateUserGroupResult> {
+  validateInput('create_user_group', params);
   const client = internalClient(config);
   let planId = params.plan_id;
 
@@ -495,6 +512,7 @@ export async function deleteUserGroups(
   config: AuthConfig,
   params: { user_group_ids: string[] },
 ): Promise<string> {
+  validateInput('delete_user_groups', params);
   await internalClient(config).delete('/api/user_groups', {
     data: { user_group_ids: params.user_group_ids },
   });
@@ -505,6 +523,7 @@ export async function addUserGroupMembers(
   config: AuthConfig,
   params: { user_group_id: string; emails: string[] },
 ): Promise<any> {
+  validateInput('add_user_group_members', params);
   const res = await internalClient(config).put(
     `/api/user_groups/${params.user_group_id}/add_members`,
     { emails: params.emails },
@@ -516,6 +535,7 @@ export async function removeUserGroupMembers(
   config: AuthConfig,
   params: { user_group_id: string; user_ids: string[] },
 ): Promise<string> {
+  validateInput('remove_user_group_members', params);
   await internalClient(config).put(
     `/api/user_groups/${params.user_group_id}/remove_members`,
     { user_ids: params.user_ids },

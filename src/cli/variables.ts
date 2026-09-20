@@ -1,13 +1,12 @@
 import { Command } from 'commander';
 import {
+  ENTERPRISE_ERROR,
+  isEnterpriseScopeError,
   listLocalVariables,
   listPublishedVariables,
   updateVariables,
-  isEnterpriseScopeError,
-  ENTERPRISE_ERROR,
 } from '../operations/variables.js';
-import { output, error } from './format.js';
-import { formatApiError } from '../helpers.js';
+import { fail, output, outputEmpty } from './format.js';
 import { requirePat } from './helpers.js';
 
 export function variablesCommand(): Command {
@@ -23,17 +22,12 @@ export function variablesCommand(): Command {
         const config = requirePat();
         const result = await listLocalVariables(config, { file_key: fileKey });
         if (Object.keys(result.variables ?? {}).length === 0 && Object.keys(result.variableCollections ?? {}).length === 0) {
-          console.log('No variables found.');
+          outputEmpty(result, 'No variables found.', options);
           return;
         }
         output(result, options);
       } catch (e: any) {
-        if (isEnterpriseScopeError(e)) {
-          error(ENTERPRISE_ERROR);
-        } else {
-          error(formatApiError(e));
-        }
-        process.exit(1);
+        fail(isEnterpriseScopeError(e) ? ENTERPRISE_ERROR : e);
       }
     });
 
@@ -46,17 +40,12 @@ export function variablesCommand(): Command {
         const config = requirePat();
         const result = await listPublishedVariables(config, { file_key: fileKey });
         if (Object.keys(result.variables ?? {}).length === 0 && Object.keys(result.variableCollections ?? {}).length === 0) {
-          console.log('No published variables found.');
+          outputEmpty(result, 'No published variables found.', options);
           return;
         }
         output(result, options);
       } catch (e: any) {
-        if (isEnterpriseScopeError(e)) {
-          error(ENTERPRISE_ERROR);
-        } else {
-          error(formatApiError(e));
-        }
-        process.exit(1);
+        fail(isEnterpriseScopeError(e) ? ENTERPRISE_ERROR : e);
       }
     });
 
@@ -87,8 +76,7 @@ export function variablesCommand(): Command {
         if (hasDeletes) {
           const { confirmAction } = await import('./helpers.js');
           if (!await confirmAction('This includes DELETE operations that cannot be undone. Continue?')) {
-            console.log('Cancelled.');
-            return;
+            throw new Error('Cancelled. No changes made.');
           }
         }
 
@@ -101,12 +89,7 @@ export function variablesCommand(): Command {
         });
         output(result, options);
       } catch (e: any) {
-        if (isEnterpriseScopeError(e)) {
-          error(ENTERPRISE_ERROR);
-        } else {
-          error(formatApiError(e));
-        }
-        process.exit(1);
+        fail(isEnterpriseScopeError(e) ? ENTERPRISE_ERROR : e);
       }
     });
 

@@ -1,18 +1,26 @@
-import { createInterface } from 'node:readline';
 import { platform } from 'node:os';
-import { setActiveWorkspace, deleteConfig, getConfigPath } from '../config.js';
-import { extractCookies, validateSession, validatePat, resolveAccountInfo } from '../auth/cookie.js';
+import { createInterface } from 'node:readline';
+import { Writable } from 'node:stream';
+import { extractCookies, resolveAccountInfo, validatePatIdentity, validateSession } from '../auth/cookie.js';
 import type { WorkspaceConfig } from '../config.js';
+import { deleteConfig, getActiveWorkspace, getConfigPath, readConfig, setActiveWorkspace } from '../config.js';
+import { executionOptions } from '../execution.js';
+import { output } from './format.js';
 
 function createPrompt() {
+  if (executionOptions.noInput) return { ask: async (): Promise<string> => { throw new Error('Interactive login disabled by --no-input. Configure environment credentials instead.'); }, close: () => {} };
   if (process.stdin.isTTY) {
-    const rl = createInterface({ input: process.stdin, output: process.stdout });
+    let muted = false;
+    const terminalOutput = new Writable({ write(chunk, _encoding, done) { if (!muted) process.stdout.write(chunk); done(); } });
+    const rl = createInterface({ input: process.stdin, output: terminalOutput, terminal: true });
     return {
-      ask: async (question: string): Promise<string> => {
-        const answer = await new Promise<string>(resolve => rl.question(question, resolve));
-        return answer.trim();
+      ask: async (question: string, secret = false): Promise<string> => {
+        const response = new Promise<string>(resolve => rl.question(question, resolve));
+        muted = secret;
+        try { return (await response).trim(); }
+        finally { muted = false; if (secret) process.stdout.write('\n'); }
       },
-      close: () => rl.close(),
+      close: () => { rl.close(); terminalOutput.end(); },
     };
   }
 
@@ -42,7 +50,12 @@ export interface LoginOptions {
 }
 
 export async function handleLogin(options: LoginOptions = {}): Promise<void> {
-  const workspace: WorkspaceConfig = {};
+  if (executionOptions.noInput) throw new Error('Interactive login disabled by --no-input. Configure environment credentials instead.');
+  if (options.refresh && options.patOnly) throw new Error('Use either --refresh or --pat-only.');
+  const existing = getActiveWorkspace();
+  if (options.refresh && !existing?.user_id) throw new Error('No stored cookie account to refresh. Run figmanage login first.');
+  const workspace: WorkspaceConfig = options.patOnly && existing ? { ...existing } : {};
+  let refreshed = false;
   const os = platform();
   const io = createPrompt();
 
@@ -66,7 +79,11 @@ export async function handleLogin(options: LoginOptions = {}): Promise<void> {
         } else {
           // Pick account if multiple
           let selected = accounts[0];
-          if (accounts.length > 1) {
+          if (options.refresh) {
+            const matching = accounts.find(account => account.userId === existing?.user_id);
+            if (!matching) throw new Error('Stored account not found in Chrome. Log into that account before refreshing.');
+            selected = matching;
+          } else if (accounts.length > 1) {
             console.log(`\n  Found ${accounts.length} Figma accounts. Identifying...\n`);
             const infos = await Promise.all(accounts.map(a => resolveAccountInfo(a)));
             for (let i = 0; i < accounts.length; i++) {
@@ -76,7 +93,7 @@ export async function handleLogin(options: LoginOptions = {}): Promise<void> {
             }
             const answer = await io.ask(`\n  Select account [1-${accounts.length}]: `);
             const idx = parseInt(answer, 10) - 1;
-            if (idx < 0 || idx >= accounts.length) {
+            if (!Number.isInteger(idx) || idx < 0 || idx >= accounts.length) {
               io.close();
               console.error('  Invalid selection.');
               process.exit(1);
@@ -95,13 +112,15 @@ export async function handleLogin(options: LoginOptions = {}): Promise<void> {
               console.log(`  Teams: ${session.teams.map(t => t.name).join(', ')}`);
             }
 
+            if (options.refresh && existing) Object.assign(workspace, existing);
             workspace.cookie = selected.cookieValue;
+            refreshed = true;
             workspace.user_id = selected.userId;
             workspace.cookie_extracted_at = new Date().toISOString();
 
             // Org selection
-            let orgId = session.orgId;
-            if (session.orgs.length > 1) {
+            let orgId = options.refresh && session.orgs.some(o => o.id === existing?.org_id) ? existing?.org_id : session.orgId;
+            if (!options.refresh && session.orgs.length > 1) {
               console.log(`\n  Found ${session.orgs.length} workspaces:\n`);
               for (let i = 0; i < session.orgs.length; i++) {
                 const o = session.orgs[i];
@@ -142,22 +161,33 @@ export async function handleLogin(options: LoginOptions = {}): Promise<void> {
     }
   }
 
-  // PAT prompt
-  console.log('\nA Personal Access Token enables comments, export, and version history.');
-  console.log('Generate one at: https://www.figma.com/settings (Security > Personal access tokens)');
-  const patInput = await io.ask('Paste your PAT (or press Enter to skip): ');
-
-  if (patInput) {
-    console.log('Validating PAT...');
-    try {
-      const patUser = await validatePat(patInput);
-      console.log(`  PAT valid (${patUser})`);
-      workspace.pat = patInput;
-    } catch {
-      console.log('  PAT invalid or expired -- skipping.');
-    }
+  if (options.refresh && !refreshed) {
+    io.close();
+    throw new Error('Cookie refresh failed. Stored credentials were preserved.');
   }
 
+  // PAT prompt
+  if (!options.refresh) {
+    console.log('\nA Personal Access Token enables comments, export, and version history.');
+    console.log('Generate one at: https://www.figma.com/settings (Security > Personal access tokens)');
+    const patInput = await io.ask('Paste your PAT (hidden; Enter to skip): ', true);
+
+    if (patInput) {
+      console.log('Validating PAT...');
+      try {
+        const identity = await validatePatIdentity(patInput);
+        if (workspace.cookie && workspace.user_id && identity.id !== workspace.user_id) {
+          throw new Error('PAT account does not match the browser account, or its identity could not be verified. Stored credentials were preserved.');
+        }
+        console.log(`  PAT valid (${identity.user})`);
+        workspace.pat = patInput;
+      } catch (error) {
+        io.close();
+        throw error;
+      }
+    }
+
+  }
   io.close();
 
   // Must have at least one credential
@@ -167,7 +197,8 @@ export async function handleLogin(options: LoginOptions = {}): Promise<void> {
   }
 
   // Derive a workspace name from the org or user
-  const workspaceName = workspace.org_id || workspace.user_id || 'default';
+  const workspaceName = (options.refresh || options.patOnly) && existing
+    ? readConfig()!.active_workspace : workspace.org_id || workspace.user_id || 'default';
 
   setActiveWorkspace(workspaceName, workspace);
   console.log(`\nCredentials saved to ${getConfigPath()}`);
@@ -176,5 +207,6 @@ export async function handleLogin(options: LoginOptions = {}): Promise<void> {
 
 export async function handleLogout(): Promise<void> {
   deleteConfig();
-  console.log('Logged out. Config file removed.');
+  if (executionOptions.jsonl) output({ logged_out: true });
+  else console.log('Logged out. Config file removed.');
 }

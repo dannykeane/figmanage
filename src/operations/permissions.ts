@@ -1,3 +1,4 @@
+import { validateInput } from '../validation.js';
 import type { AuthConfig } from '../auth/client.js';
 import { internalClient } from '../clients/internal-api.js';
 
@@ -28,6 +29,7 @@ export async function getPermissions(
   config: AuthConfig,
   params: { resource_type: string; resource_id: string },
 ): Promise<PermissionUser[]> {
+  validateInput('get_permissions', params);
   const roles = await getRoles(config, params.resource_type, params.resource_id);
   return roles.map((r: any) => ({
     role_id: String(r.id),
@@ -44,6 +46,7 @@ export async function setPermissions(
   config: AuthConfig,
   params: { resource_type: string; resource_id: string; user_id: string; role: string },
 ): Promise<string> {
+  validateInput('set_permissions', params);
   const roles = await getRoles(config, params.resource_type, params.resource_id);
   const target = roles.find((r: any) => String(r.user_id) === params.user_id);
   if (!target) {
@@ -66,6 +69,7 @@ export async function share(
   config: AuthConfig,
   params: { resource_type: string; resource_id: string; email: string; role?: string },
 ): Promise<ShareResult> {
+  validateInput('share', params);
   const role = params.role || 'viewer';
   const level = LEVEL_MAP[role];
   const res = await internalClient(config).post('/api/invites', {
@@ -89,6 +93,7 @@ export async function revokeAccess(
   config: AuthConfig,
   params: { resource_type: string; resource_id: string; user_id: string },
 ): Promise<string> {
+  validateInput('revoke_access', params);
   const roles = await getRoles(config, params.resource_type, params.resource_id);
   const target = roles.find((r: any) => String(r.user_id) === params.user_id);
   if (!target) {
@@ -109,6 +114,7 @@ export interface RoleRequest {
 }
 
 export async function listRoleRequests(config: AuthConfig): Promise<RoleRequest[]> {
+  validateInput('list_role_requests', {});
   const res = await internalClient(config).get('/api/user_notifications/server_driven/plan', {
     params: { current_plan_id: '-1', app_version: '1', client_type: 'web' },
   });
@@ -138,6 +144,7 @@ export async function approveRoleRequest(
   config: AuthConfig,
   params: { notification_id: string },
 ): Promise<string> {
+  validateInput('approve_role_request', params);
   const res = await internalClient(config).put('/api/user_notifications/accept', {
     id: params.notification_id,
     medium: 'web',
@@ -156,6 +163,7 @@ export async function denyRoleRequest(
   config: AuthConfig,
   params: { notification_id: string },
 ): Promise<string> {
+  validateInput('deny_role_request', params);
   await internalClient(config).put('/api/user_notifications/reject', {
     id: params.notification_id,
     medium: 'web',

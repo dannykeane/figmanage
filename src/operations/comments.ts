@@ -1,3 +1,4 @@
+import { validateInput } from '../validation.js';
 import type { AuthConfig } from '../auth/client.js';
 import { publicClient } from '../clients/public-api.js';
 import { internalClient } from '../clients/internal-api.js';
@@ -32,6 +33,7 @@ export async function listComments(
   config: AuthConfig,
   params: { file_key: string },
 ): Promise<Comment[]> {
+  validateInput('list_comments', params);
   const res = await publicClient(config).get(`/v1/files/${params.file_key}/comments`);
   const comments = res.data?.comments || [];
   return comments.map((c: any) => ({
@@ -72,6 +74,7 @@ export async function postComment(
   config: AuthConfig,
   params: { file_key: string; message: string; comment_id?: string; node_id?: string },
 ): Promise<PostedComment> {
+  validateInput('post_comment', params);
   const body: any = { message: params.message };
   if (params.comment_id) body.comment_id = params.comment_id;
   if (params.node_id) body.client_meta = { node_id: params.node_id, node_offset: { x: 0, y: 0 } };
@@ -91,6 +94,7 @@ export async function deleteComment(
   config: AuthConfig,
   params: { file_key: string; comment_id: string },
 ): Promise<void> {
+  validateInput('delete_comment', params);
   await publicClient(config).delete(`/v1/files/${params.file_key}/comments/${params.comment_id}`);
 }
 
@@ -98,6 +102,7 @@ export async function resolveComment(
   config: AuthConfig,
   params: { file_key: string; comment_id: string; resolved?: boolean },
 ): Promise<string> {
+  validateInput('resolve_comment', params);
   const resolve = params.resolved !== false;
   await internalClient(config).put(
     `/api/file/${params.file_key}/comments/${params.comment_id}`,
@@ -110,6 +115,7 @@ export async function editComment(
   config: AuthConfig,
   params: { file_key: string; comment_id: string; message: string },
 ): Promise<string> {
+  validateInput('edit_comment', params);
   await internalClient(config).put(
     `/api/file/${params.file_key}/comments/${params.comment_id}`,
     { message_meta: [{ t: params.message }] },
@@ -127,6 +133,7 @@ export async function addCommentReaction(
   config: AuthConfig,
   params: { file_key: string; comment_id: string; emoji: string },
 ): Promise<AddedReaction> {
+  validateInput('add_comment_reaction', params);
   const res = await publicClient(config).post(
     `/v1/files/${params.file_key}/comments/${params.comment_id}/reactions`,
     { emoji: params.emoji },
@@ -143,6 +150,7 @@ export async function removeCommentReaction(
   config: AuthConfig,
   params: { file_key: string; comment_id: string; emoji: string },
 ): Promise<void> {
+  validateInput('remove_comment_reaction', params);
   await publicClient(config).delete(
     `/v1/files/${params.file_key}/comments/${params.comment_id}/reactions`,
     { params: { emoji: params.emoji } },
@@ -153,6 +161,7 @@ export async function listCommentReactions(
   config: AuthConfig,
   params: { file_key: string; comment_id: string },
 ): Promise<Reaction[]> {
+  validateInput('list_comment_reactions', params);
   const res = await publicClient(config).get(
     `/v1/files/${params.file_key}/comments/${params.comment_id}/reactions`,
   );

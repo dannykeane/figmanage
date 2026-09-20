@@ -1,3 +1,4 @@
+import { validateInput } from '../validation.js';
 import type { AuthConfig } from '../auth/client.js';
 import { publicClient } from '../clients/public-api.js';
 
@@ -15,6 +16,7 @@ export async function listWebhooks(
   config: AuthConfig,
   params: { team_id: string },
 ): Promise<{ count: number; webhooks: any[] }> {
+  validateInput('list_webhooks', params);
   const res = await publicClient(config).get(`/v2/teams/${params.team_id}/webhooks`);
   const webhooks = res.data?.webhooks || [];
   return { count: webhooks.length, webhooks };
@@ -30,6 +32,7 @@ export async function createWebhook(
     description?: string;
   },
 ): Promise<Record<string, any>> {
+  validateInput('create_webhook', params);
   const body: any = {
     team_id: params.team_id,
     event_type: params.event_type,
@@ -54,6 +57,7 @@ export async function updateWebhook(
     status?: WebhookStatus;
   },
 ): Promise<Record<string, any>> {
+  validateInput('update_webhook', params);
   const body: any = {};
   if (params.event_type) body.event_type = params.event_type;
   if (params.endpoint) body.endpoint = params.endpoint;
@@ -79,6 +83,7 @@ export async function webhookRequests(
   config: AuthConfig,
   params: { webhook_id: string },
 ): Promise<{ count: number; requests: WebhookRequest[] }> {
+  validateInput('webhook_requests', params);
   const res = await publicClient(config).get(`/v2/webhooks/${params.webhook_id}/requests`);
   const requests = (res.data?.requests || []).map((r: any) => ({
     id: r.id,
@@ -95,5 +100,6 @@ export async function deleteWebhook(
   config: AuthConfig,
   params: { webhook_id: string },
 ): Promise<void> {
+  validateInput('delete_webhook', params);
   await publicClient(config).delete(`/v2/webhooks/${params.webhook_id}`);
 }

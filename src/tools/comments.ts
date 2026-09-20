@@ -1,19 +1,19 @@
-import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { AuthConfig } from '../auth/client.js';
-import { defineTool, toolResult, toolError, toolSummary, figmaId } from './register.js';
 import { formatApiError } from '../helpers.js';
 import {
-  listComments,
-  formatCommentsAsMarkdown,
-  postComment,
-  deleteComment,
-  resolveComment,
-  editComment,
   addCommentReaction,
-  removeCommentReaction,
+  deleteComment,
+  editComment,
+  formatCommentsAsMarkdown,
   listCommentReactions,
+  listComments,
+  postComment,
+  removeCommentReaction,
+  resolveComment,
 } from '../operations/comments.js';
+import { inputSchemas } from '../schemas.js';
+import { defineTool, toolError, toolResult, toolSummary } from './register.js';
 
 // -- list_comments --
 
@@ -25,10 +25,7 @@ defineTool({
       'list_comments',
       {
         description: 'List comments on a file. Returns comment text, author, timestamps, and thread structure.',
-        inputSchema: {
-          file_key: figmaId.describe('File key'),
-          as_md: z.boolean().optional().describe('Format as markdown thread (default: false)'),
-        },
+        inputSchema: inputSchemas.list_comments,
       },
       async ({ file_key, as_md }) => {
         try {
@@ -57,12 +54,7 @@ defineTool({
       'post_comment',
       {
         description: 'Post a comment on a file. Optionally pin to a specific node or reply to an existing comment.',
-        inputSchema: {
-          file_key: figmaId.describe('File key'),
-          message: z.string().describe('Comment text'),
-          comment_id: figmaId.optional().describe('Parent comment ID to reply to'),
-          node_id: figmaId.optional().describe('Node ID to pin the comment to'),
-        },
+        inputSchema: inputSchemas.post_comment,
       },
       async ({ file_key, message, comment_id, node_id }) => {
         try {
@@ -88,10 +80,7 @@ defineTool({
       'delete_comment',
       {
         description: 'Permanently delete a comment. For top-level comments, the entire thread is removed. Cannot be undone.',
-        inputSchema: {
-          file_key: figmaId.describe('File key'),
-          comment_id: figmaId.describe('Comment ID to delete'),
-        },
+        inputSchema: inputSchemas.delete_comment,
       },
       async ({ file_key, comment_id }) => {
         try {
@@ -115,10 +104,7 @@ defineTool({
       'list_comment_reactions',
       {
         description: 'List emoji reactions on a comment.',
-        inputSchema: {
-          file_key: figmaId.describe('File key'),
-          comment_id: figmaId.describe('Comment ID'),
-        },
+        inputSchema: inputSchemas.list_comment_reactions,
       },
       async ({ file_key, comment_id }) => {
         try {
@@ -144,11 +130,7 @@ defineTool({
       'resolve_comment',
       {
         description: 'Resolve or unresolve a comment thread. Resolved comments are collapsed in the Figma UI.',
-        inputSchema: {
-          file_key: figmaId.describe('File key'),
-          comment_id: figmaId.describe('Comment ID to resolve'),
-          resolved: z.boolean().optional().describe('true to resolve (default), false to unresolve'),
-        },
+        inputSchema: inputSchemas.resolve_comment,
       },
       async ({ file_key, comment_id, resolved }) => {
         try {
@@ -173,11 +155,7 @@ defineTool({
       'edit_comment',
       {
         description: 'Edit the text of an existing comment.',
-        inputSchema: {
-          file_key: figmaId.describe('File key'),
-          comment_id: figmaId.describe('Comment ID'),
-          message: z.string().describe('New comment text'),
-        },
+        inputSchema: inputSchemas.edit_comment,
       },
       async ({ file_key, comment_id, message }) => {
         try {
@@ -202,11 +180,7 @@ defineTool({
       'add_comment_reaction',
       {
         description: 'Add an emoji reaction to a comment.',
-        inputSchema: {
-          file_key: figmaId.describe('File key'),
-          comment_id: figmaId.describe('Comment ID'),
-          emoji: z.string().describe('Emoji shortcode (e.g. ":thumbsup:", ":heart:")'),
-        },
+        inputSchema: inputSchemas.add_comment_reaction,
       },
       async ({ file_key, comment_id, emoji }) => {
         try {
@@ -231,11 +205,7 @@ defineTool({
       'remove_comment_reaction',
       {
         description: 'Remove your emoji reaction from a comment.',
-        inputSchema: {
-          file_key: figmaId.describe('File key'),
-          comment_id: figmaId.describe('Comment ID'),
-          emoji: z.string().describe('Emoji shortcode to remove (e.g. ":thumbsup:")'),
-        },
+        inputSchema: inputSchemas.remove_comment_reaction,
       },
       async ({ file_key, comment_id, emoji }) => {
         try {

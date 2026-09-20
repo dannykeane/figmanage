@@ -1,9 +1,9 @@
-import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { AuthConfig } from '../auth/client.js';
-import { defineTool, toolResult, toolError, toolSummary, figmaId } from './register.js';
 import { formatApiError } from '../helpers.js';
 import { getFile, getNodes } from '../operations/reading.js';
+import { inputSchemas } from '../schemas.js';
+import { defineTool, toolError, toolSummary } from './register.js';
 
 // -- get_file --
 
@@ -15,11 +15,7 @@ defineTool({
       'get_file',
       {
         description: 'Read file contents as a node tree. Use depth to limit response size (full trees can be very large). depth=1 returns pages only. To read a branch, use the branch file key from list_branches.',
-        inputSchema: {
-          file_key: figmaId.describe('File key (or branch file key from list_branches)'),
-          depth: z.number().int().optional().describe('Tree depth limit. 0=root, 1=pages, 2=top-level frames. Omit for full tree.'),
-          node_id: figmaId.optional().describe('Start from a specific node instead of document root'),
-        },
+        inputSchema: inputSchemas.get_file,
       },
       async ({ file_key, depth, node_id }) => {
         try {
@@ -45,11 +41,7 @@ defineTool({
       'get_nodes',
       {
         description: 'Read specific nodes from a file. Returns the full node tree for each ID including type, name, layout properties, fills, strokes, and children.',
-        inputSchema: {
-          file_key: figmaId.describe('File key'),
-          node_ids: z.array(figmaId).min(1).describe('Node IDs to fetch'),
-          depth: z.number().int().optional().describe('Depth limit per node'),
-        },
+        inputSchema: inputSchemas.get_nodes,
       },
       async ({ file_key, node_ids, depth }) => {
         try {

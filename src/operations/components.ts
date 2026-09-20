@@ -1,3 +1,4 @@
+import { validateInput } from '../validation.js';
 import type { AuthConfig } from '../auth/client.js';
 import { publicClient } from '../clients/public-api.js';
 
@@ -5,6 +6,7 @@ export async function listFileComponents(
   config: AuthConfig,
   params: { file_key: string },
 ): Promise<{ count: number; components: any[] }> {
+  validateInput('list_file_components', params);
   const res = await publicClient(config).get(`/v1/files/${params.file_key}/components`);
   const components = res.data?.meta?.components || [];
   return { count: components.length, components };
@@ -14,6 +16,7 @@ export async function listFileStyles(
   config: AuthConfig,
   params: { file_key: string },
 ): Promise<{ count: number; styles: any[] }> {
+  validateInput('list_file_styles', params);
   const res = await publicClient(config).get(`/v1/files/${params.file_key}/styles`);
   const styles = res.data?.meta?.styles || [];
   return { count: styles.length, styles };
@@ -23,6 +26,7 @@ export async function listTeamComponents(
   config: AuthConfig,
   params: { team_id: string; page_size?: number; cursor?: string },
 ): Promise<{ components: any[]; pagination: any }> {
+  validateInput('list_team_components', params);
   const queryParams: Record<string, string | number> = { page_size: params.page_size ?? 30 };
   if (params.cursor) queryParams.after = params.cursor;
 
@@ -37,6 +41,7 @@ export async function listTeamStyles(
   config: AuthConfig,
   params: { team_id: string; page_size?: number; cursor?: string },
 ): Promise<{ styles: any[]; pagination: any }> {
+  validateInput('list_team_styles', params);
   const queryParams: Record<string, string | number> = { page_size: params.page_size ?? 30 };
   if (params.cursor) queryParams.after = params.cursor;
 

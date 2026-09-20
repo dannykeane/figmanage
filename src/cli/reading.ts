@@ -1,7 +1,6 @@
 import { Command } from 'commander';
 import { getFile, getNodes } from '../operations/reading.js';
-import { output, error } from './format.js';
-import { formatApiError } from '../helpers.js';
+import { fail, output } from './format.js';
 import { requirePat } from './helpers.js';
 
 export function readingCommand(): Command {
@@ -23,13 +22,12 @@ export function readingCommand(): Command {
         const config = requirePat();
         const result = await getFile(config, {
           file_key: fileKey,
-          depth: options.depth !== undefined ? parseInt(options.depth, 10) : undefined,
+          depth: options.depth !== undefined ? Number(options.depth) : undefined,
           node_id: options.nodeId,
         });
         output(result, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -47,12 +45,11 @@ export function readingCommand(): Command {
         const result = await getNodes(config, {
           file_key: fileKey,
           node_ids: nodeIds,
-          depth: options.depth !== undefined ? parseInt(options.depth, 10) : undefined,
+          depth: options.depth !== undefined ? Number(options.depth) : undefined,
         });
         output(result, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 

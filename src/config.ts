@@ -16,6 +16,7 @@ export interface FigmanageConfig {
 }
 
 export function getConfigDir(): string {
+  if (process.env.FIGMANAGE_CONFIG_DIR) return process.env.FIGMANAGE_CONFIG_DIR;
   if (process.platform === 'win32' && process.env.APPDATA) {
     return join(process.env.APPDATA, 'figmanage');
   }

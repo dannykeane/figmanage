@@ -1,3 +1,4 @@
+import { validateInput } from '../validation.js';
 import type { AuthConfig } from '../auth/client.js';
 import { publicClient } from '../clients/public-api.js';
 
@@ -7,6 +8,7 @@ export async function getFile(
   config: AuthConfig,
   params: { file_key: string; depth?: number; node_id?: string },
 ): Promise<any> {
+  validateInput('get_file', params);
   const queryParams: Record<string, string> = {};
   if (params.depth !== undefined) queryParams.depth = String(params.depth);
   if (params.node_id) queryParams['node-id'] = params.node_id;
@@ -19,6 +21,7 @@ export async function getNodes(
   config: AuthConfig,
   params: { file_key: string; node_ids: string[]; depth?: number },
 ): Promise<any> {
+  validateInput('get_nodes', params);
   const queryParams: Record<string, string> = {
     ids: params.node_ids.join(','),
   };

@@ -1,9 +1,9 @@
-import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { AuthConfig } from '../auth/client.js';
-import { defineTool, toolResult, toolError, toolSummary, figmaId } from './register.js';
 import { formatApiError } from '../helpers.js';
-import { listVersions, createVersion } from '../operations/versions.js';
+import { createVersion, listVersions } from '../operations/versions.js';
+import { inputSchemas } from '../schemas.js';
+import { defineTool, toolError, toolResult, toolSummary } from './register.js';
 
 // -- list_versions --
 
@@ -15,14 +15,12 @@ defineTool({
       'list_versions',
       {
         description: 'List version history for a file. Returns named snapshots and auto-saves.',
-        inputSchema: {
-          file_key: figmaId.describe('File key'),
-        },
+        inputSchema: inputSchemas.list_versions,
       },
       async ({ file_key }) => {
         try {
           const result = await listVersions(config, { file_key });
-          if (result.length === 0) return toolResult('No versions found.');
+          if (result.length === 0) return toolResult('No versions found.', result);
           return toolSummary(`${result.length} version(s).`, result, 'Use create_version to add a named checkpoint.');
         } catch (e: any) {
           return toolError(`Failed to list versions: ${formatApiError(e)}`);
@@ -43,11 +41,7 @@ defineTool({
       'create_version',
       {
         description: 'Create a named version (checkpoint) in a file\'s history.',
-        inputSchema: {
-          file_key: figmaId.describe('File key'),
-          title: z.string().describe('Version title/label'),
-          description: z.string().optional().describe('Version description'),
-        },
+        inputSchema: inputSchemas.create_version,
       },
       async ({ file_key, title, description }) => {
         try {

@@ -1,233 +1,119 @@
-/**
- * Interactive setup tools for first-run MCP configuration.
- *
- * Guides the user through cookie extraction and PAT creation
- * via conversational tool calls. Registered when auth is missing;
- * replaced by the full toolset once setup completes.
- */
-
-import { platform } from 'node:os';
-import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import {
-  extractCookies,
-  validateSession,
-  validatePat,
-  resolveAccountInfo,
-  type FigmaAccount,
-} from '../auth/cookie.js';
-import { setActiveWorkspace, getActiveWorkspace } from '../config.js';
-import { loadAuthConfig, hasPat, hasCookie } from '../auth/client.js';
+import { z } from 'zod';
+import { loadAuthConfig, type AuthConfig } from '../auth/client.js';
+import { extractCookies, resolveAccountInfo, validatePatIdentity, validateSession, type FigmaAccount } from '../auth/cookie.js';
+import { setupStatus } from '../auth/setup-status.js';
+import { getActiveWorkspace, readConfig, setActiveWorkspace } from '../config.js';
+import { formatApiError } from '../helpers.js';
+import { toolError, toolResult } from './register.js';
 
-// State shared across setup steps within a single session
-let pendingAccounts: FigmaAccount[] = [];
+const outputSchema = { result: z.unknown().optional(), error: z.object({ code: z.string(), message: z.string() }).optional() };
+const writeAnnotations = { readOnlyHint: false, destructiveHint: false, openWorldHint: true };
 
 export function registerSetupTools(
   server: McpServer,
-  onSetupComplete: () => void,
+  onSetupComplete: () => Promise<void>,
+  options: { readOnly?: boolean; getConfig?: () => AuthConfig; refreshCapabilities?: () => Promise<void> } = {},
 ): void {
+  let pendingAccounts: FigmaAccount[] = [];
+  const environmentAuthMessage = () => process.env.FIGMA_PAT || (process.env.FIGMA_AUTH_COOKIE && process.env.FIGMA_USER_ID)
+    ? 'Environment credentials are active. Update them or remove their variables to use stored setup. Saved and environment credentials are not combined.'
+    : undefined;
 
-  server.tool(
-    'setup_status',
-    'Check figmanage authentication status and get setup instructions. Always call this before using any other tool.',
-    {},
-    async () => {
-      const config = loadAuthConfig();
+  server.registerTool('setup_status', {
+    description: 'Check live authentication, retry admin access detection, and get structured next actions. Use before setup, after an authentication error, or when expected tools are missing. Does not read browser credentials or change settings.',
+    outputSchema, annotations: { readOnlyHint: true, openWorldHint: true },
+  }, async () => {
+    await options.refreshCapabilities?.();
+    const result = await setupStatus(options.getConfig?.() ?? loadAuthConfig());
+    if (options.readOnly) result.guidance += ' Setup changes are disabled on this read-only connection. Use local CLI login and reconnect MCP to load saved credentials.';
+    return toolResult(JSON.stringify(result, null, 2), result);
+  });
 
-      if (hasPat(config) && hasCookie(config)) {
-        return { content: [{ type: 'text', text: 'figmanage is fully configured. All tools are available.' }] };
+  if (options.readOnly) return;
+
+  server.registerTool('setup_extract_cookies', {
+    description: 'Read Figma sessions from Chrome for setup or recovery. Requires permission to read browser credentials; reuse permission already granted in this conversation. The user must be logged into Figma. macOS may show a Keychain prompt. Never returns cookies.',
+    outputSchema, annotations: writeAnnotations,
+  }, async () => {
+    try {
+      const environmentMessage = environmentAuthMessage();
+      if (environmentMessage) throw new Error(environmentMessage);
+      pendingAccounts = [];
+      const accounts = extractCookies();
+      if (!accounts.length) return toolError('No Figma sessions found in Chrome. Log into figma.com in Chrome, then try again.');
+      const infos = await Promise.all(accounts.map(resolveAccountInfo));
+      pendingAccounts = accounts;
+      const existing = getActiveWorkspace();
+      let currentUser = existing?.user_id;
+      if (!currentUser && existing?.pat) {
+        try { currentUser = (await validatePatIdentity(existing.pat)).id; }
+        catch { /* Leave account choice explicit when the saved identity cannot be checked. */ }
       }
+      const matching = accounts.map((account, index) => ({ account, index })).filter(({ account }) => account.userId === currentUser);
+      const recommended = matching.length === 1 ? matching[0].index + 1 : !currentUser && !existing?.pat && accounts.length === 1 ? 1 : null;
+      const result = {
+        accounts: accounts.map((account, index) => ({ account_index: index + 1, user_id: account.userId, label: infos[index].figmaEmail || `User ${account.userId}`, chrome_profile: infos[index].profileName })),
+        recommended_account_index: recommended,
+        next_action: 'setup_select_account',
+        requires_user_action: recommended === null,
+      };
+      return toolResult(recommended
+        ? `Use setup_select_account with account_index ${recommended}. This is the current account or the only account on first setup.`
+        : 'Ask which Figma account to use, then call setup_select_account with its account_index.', result);
+    } catch (error) { return toolError(`Cookie extraction failed: ${formatApiError(error)}`); }
+  });
 
-      const os = platform();
-      const lines: string[] = [
-        'figmanage needs two credentials to give you full access to all 85 Figma workspace tools:',
-        '',
-        '1. Browser cookie -- extracted automatically from Chrome',
-        '2. Personal Access Token (PAT) -- created in Figma settings',
-        '',
-      ];
-
-      if (!hasCookie(config)) {
-        lines.push('NEXT: Cookie extraction');
-        lines.push('The user must be logged into figma.com in Chrome before proceeding.');
-        if (os === 'darwin') {
-          lines.push('');
-          lines.push('When they proceed, a macOS Keychain prompt will appear asking to access');
-          lines.push('"Chrome Safe Storage". They need to click Allow.');
-        } else if (os === 'linux') {
-          lines.push('');
-          lines.push('On Linux, Chrome cookies are decrypted using the system keyring or a default key.');
-        }
-        lines.push('');
-        lines.push('Ask the user to confirm they are logged into figma.com in Chrome, then call setup_extract_cookies.');
-      } else {
-        lines.push('Cookie auth is configured.');
-        lines.push('');
-        lines.push('NEXT: Personal Access Token');
-        lines.push('Ask the user to create a PAT at: https://www.figma.com/settings');
-        lines.push('(Security > Personal access tokens)');
-        lines.push('Then call setup_save_pat with the token value.');
+  server.registerTool('setup_select_account', {
+    description: 'Validate and save a browser session after setup_extract_cookies. Use its recommended account without another question; ask when selection is ambiguous or changes the existing account. Preserves the PAT for the same account.',
+    inputSchema: { account_index: z.number().int().min(1).describe('Account number returned by setup_extract_cookies') },
+    outputSchema, annotations: writeAnnotations,
+  }, async ({ account_index }) => {
+    const account = pendingAccounts[account_index - 1];
+    if (!account) return toolError('No matching account. Call setup_extract_cookies, then select one of its account numbers.');
+    try {
+      const environmentMessage = environmentAuthMessage();
+      if (environmentMessage) throw new Error(environmentMessage);
+      const session = await validateSession(account.cookieValue, account.userId);
+      const saved = readConfig();
+      const existing = getActiveWorkspace();
+      let sameAccount = existing?.user_id === account.userId;
+      if (existing?.pat && !existing.user_id) {
+        const identity = await validatePatIdentity(existing.pat);
+        if (!identity.id) throw new Error('Could not verify the saved PAT account. Stored credentials were preserved.');
+        sameAccount = identity.id === account.userId;
       }
+      const orgId = sameAccount && session.orgs.some(org => org.id === existing?.org_id)
+        ? existing?.org_id : session.orgId || session.orgs[0]?.id;
+      const workspaceName = sameAccount && saved ? saved.active_workspace : `${orgId || 'default'}:${account.userId}`;
+      setActiveWorkspace(workspaceName, {
+        ...(sameAccount ? existing : {}), cookie: account.cookieValue, user_id: account.userId,
+        org_id: orgId || undefined, cookie_extracted_at: new Date().toISOString(),
+      });
+      await onSetupComplete();
+      const result = { user_id: account.userId, org_id: orgId || null, pat_preserved: !!(sameAccount && existing?.pat), next_action: 'setup_status' };
+      return toolResult('Browser session saved. Workspace tools are available within your permissions. A PAT is optional for additional public API tools. Call setup_status to verify.', result);
+    } catch (error) { return toolError(`Session setup failed: ${formatApiError(error)}`); }
+  });
 
-      return { content: [{ type: 'text', text: lines.join('\n') }] };
-    },
-  );
-
-  server.tool(
-    'setup_extract_cookies',
-    'Extract Figma session cookies from Chrome. On macOS this triggers a Keychain prompt. IMPORTANT: Before calling, confirm the user is logged into figma.com in Chrome and knows a system prompt may appear.',
-    {},
-    async () => {
-      try {
-        const accounts = extractCookies();
-
-        if (accounts.length === 0) {
-          return {
-            content: [{
-              type: 'text',
-              text: 'No Figma cookies found in Chrome. The user needs to log into figma.com in Chrome first, then try again.',
-            }],
-          };
-        }
-
-        pendingAccounts = accounts;
-
-        const infos = await Promise.all(accounts.map(a => resolveAccountInfo(a)));
-
-        const lines: string[] = [
-          `Found ${accounts.length} Figma account${accounts.length > 1 ? 's' : ''}:`,
-          '',
-        ];
-        for (let i = 0; i < accounts.length; i++) {
-          const info = infos[i];
-          const label = info.figmaEmail || `User ${accounts[i].userId}`;
-          lines.push(`  ${i + 1}. ${label} (Chrome profile: ${info.profileName})`);
-        }
-        lines.push('');
-        lines.push('Ask the user which account to use, then call setup_select_account with the chosen number.');
-
-        return { content: [{ type: 'text', text: lines.join('\n') }] };
-      } catch (e: any) {
-        return {
-          isError: true,
-          content: [{ type: 'text', text: `Cookie extraction failed: ${e.message}` }],
-        };
+  server.registerTool('setup_save_pat', {
+    description: 'Validate and save a PAT already supplied by the user. Prefer local figmanage login --pat-only to keep tokens out of chat. Rejects a PAT belonging to a different saved browser account.',
+    inputSchema: { pat: z.string().min(1).describe('Figma Personal Access Token') },
+    outputSchema, annotations: writeAnnotations,
+  }, async ({ pat }) => {
+    try {
+      const environmentMessage = environmentAuthMessage();
+      if (environmentMessage) throw new Error(environmentMessage);
+      const identity = await validatePatIdentity(pat);
+      const workspace = getActiveWorkspace() || {};
+      if (workspace.cookie && workspace.user_id && identity.id !== workspace.user_id) {
+        throw new Error('PAT account does not match the saved browser account, or its identity could not be verified. Stored credentials were preserved.');
       }
-    },
-  );
-
-  server.tool(
-    'setup_select_account',
-    'Select a Figma account and validate the session. Call after setup_extract_cookies.',
-    {
-      account_index: z.number().int().min(1).describe('Account number from the list returned by setup_extract_cookies'),
-    },
-    async ({ account_index }) => {
-      if (pendingAccounts.length === 0) {
-        return {
-          isError: true,
-          content: [{ type: 'text', text: 'No accounts available. Call setup_extract_cookies first.' }],
-        };
-      }
-
-      const idx = account_index - 1;
-      if (idx < 0 || idx >= pendingAccounts.length) {
-        return {
-          isError: true,
-          content: [{ type: 'text', text: `Invalid selection. Choose 1-${pendingAccounts.length}.` }],
-        };
-      }
-
-      const account = pendingAccounts[idx];
-
-      try {
-        const session = await validateSession(account.cookieValue, account.userId);
-
-        let orgId = session.orgId;
-        if (!orgId && session.orgs.length > 0) {
-          orgId = session.orgs[0].id;
-        }
-
-        const workspaceName = orgId || account.userId || 'default';
-        setActiveWorkspace(workspaceName, {
-          cookie: account.cookieValue,
-          user_id: account.userId,
-          org_id: orgId || undefined,
-          cookie_extracted_at: new Date().toISOString(),
-        });
-
-        const lines: string[] = [`Session valid (user ${account.userId}).`];
-        if (session.orgs.length > 0) {
-          const orgName = session.orgs.find(o => o.id === orgId)?.name;
-          lines.push(`Workspace: ${orgName ? `${orgName} (${orgId})` : orgId}`);
-        }
-        if (session.teams.length > 0) {
-          lines.push(`Teams: ${session.teams.map(t => t.name).join(', ')}`);
-        }
-        lines.push('');
-        lines.push('Cookie saved. Now need a Personal Access Token for full access.');
-        lines.push('Ask the user to create one at: https://www.figma.com/settings');
-        lines.push('(Security > Personal access tokens)');
-        lines.push('Then call setup_save_pat with the token.');
-
-        return { content: [{ type: 'text', text: lines.join('\n') }] };
-      } catch (e: any) {
-        const status = e.response?.status;
-        if (status === 401 || status === 403) {
-          return {
-            isError: true,
-            content: [{ type: 'text', text: 'Cookie expired or invalid. Log into figma.com in Chrome and run setup_extract_cookies again.' }],
-          };
-        }
-        return {
-          isError: true,
-          content: [{ type: 'text', text: `Session validation failed: ${e.message}` }],
-        };
-      }
-    },
-  );
-
-  server.tool(
-    'setup_save_pat',
-    'Validate and save a Figma Personal Access Token. Completes setup and activates all tools.',
-    {
-      pat: z.string().min(1).describe('Figma Personal Access Token (starts with figd_)'),
-    },
-    async ({ pat }) => {
-      try {
-        const patUser = await validatePat(pat);
-
-        // Update the active workspace with the PAT
-        const workspace = getActiveWorkspace();
-        if (!workspace) {
-          return {
-            isError: true,
-            content: [{ type: 'text', text: 'No workspace configured. Run setup_extract_cookies and setup_select_account first.' }],
-          };
-        }
-
-        workspace.pat = pat;
-        const workspaceName = workspace.org_id || workspace.user_id || 'default';
-        setActiveWorkspace(workspaceName, workspace);
-
-        // Clear setup state
-        pendingAccounts = [];
-
-        // Trigger full tool registration
-        onSetupComplete();
-
-        return {
-          content: [{
-            type: 'text',
-            text: `PAT valid (${patUser}). Setup complete -- all 85 figmanage tools are now available.`,
-          }],
-        };
-      } catch {
-        return {
-          isError: true,
-          content: [{ type: 'text', text: 'PAT invalid or expired. Check the token and try again.' }],
-        };
-      }
-    },
-  );
+      const workspaceName = readConfig()?.active_workspace || workspace.org_id || workspace.user_id || 'default';
+      setActiveWorkspace(workspaceName, { ...workspace, pat });
+      pendingAccounts = [];
+      await onSetupComplete();
+      return toolResult(`PAT valid (${identity.user}). Use tools supported by its scopes and your workspace permissions.`, { user: identity.user, next_action: 'setup_status' });
+    } catch (error) { return toolError(`PAT setup failed: ${formatApiError(error)}`); }
+  });
 }

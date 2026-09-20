@@ -636,7 +636,7 @@ describe('branch_cleanup', () => {
     const handler = getHandler('branch_cleanup', dualAuthConfig());
 
     mockPublicAxios.get.mockImplementation((url: string) => {
-      if (url.includes('/projects/')) {
+      if (url === '/v2/folders/proj-1/files') {
         return Promise.resolve(axiosResponse({
           files: [
             { key: 'file-1', name: 'Design' },
@@ -681,7 +681,7 @@ describe('branch_cleanup', () => {
     const handler = getHandler('branch_cleanup', dualAuthConfig());
 
     mockPublicAxios.get.mockImplementation((url: string) => {
-      if (url.includes('/projects/')) return Promise.resolve(axiosResponse({ files: [] }));
+      if (url === '/v2/folders/proj-1/files') return Promise.resolve(axiosResponse({ files: [] }));
       return Promise.reject(axiosError(404));
     });
 
@@ -695,7 +695,7 @@ describe('branch_cleanup', () => {
     const handler = getHandler('branch_cleanup', dualAuthConfig());
 
     mockPublicAxios.get.mockImplementation((url: string) => {
-      if (url.includes('/projects/')) {
+      if (url === '/v2/folders/proj-1/files') {
         return Promise.resolve(axiosResponse({ files: [{ key: 'f1', name: 'File' }] }));
       }
       if (url.includes('/files/f1')) {
@@ -721,7 +721,7 @@ describe('branch_cleanup', () => {
     const handler = getHandler('branch_cleanup', patOnlyConfig());
 
     mockPublicAxios.get.mockImplementation((url: string) => {
-      if (url.includes('/projects/')) {
+      if (url === '/v2/folders/proj-1/files') {
         return Promise.resolve(axiosResponse({ files: [{ key: 'f1', name: 'File' }] }));
       }
       if (url.includes('/files/f1')) {
@@ -749,7 +749,7 @@ describe('branch_cleanup', () => {
     }));
 
     mockPublicAxios.get.mockImplementation((url: string) => {
-      if (url.includes('/projects/')) {
+      if (url === '/v2/folders/proj-1/files') {
         return Promise.resolve(axiosResponse({ files: [{ key: 'f1', name: 'File' }] }));
       }
       if (url.includes('/files/f1')) {
@@ -795,7 +795,7 @@ describe('branch_cleanup', () => {
     const handler = getHandler('branch_cleanup', dualAuthConfig());
 
     mockPublicAxios.get.mockImplementation((url: string) => {
-      if (url.includes('/projects/')) {
+      if (url === '/v2/folders/proj-1/files') {
         return Promise.resolve(axiosResponse({
           files: [{ key: 'ok', name: 'OK' }, { key: 'fail', name: 'Fail' }],
         }));
@@ -823,7 +823,7 @@ describe('branch_cleanup', () => {
     const handler = getHandler('branch_cleanup', dualAuthConfig());
 
     mockPublicAxios.get.mockImplementation((url: string) => {
-      if (url.includes('/projects/')) {
+      if (url === '/v2/folders/proj-1/files') {
         return Promise.resolve(axiosResponse({ files: [{ key: 'f1', name: 'File' }] }));
       }
       if (url.includes('/files/f1')) {
@@ -845,7 +845,7 @@ describe('branch_cleanup', () => {
     const handler = getHandler('branch_cleanup', dualAuthConfig());
 
     mockPublicAxios.get.mockImplementation((url: string) => {
-      if (url.includes('/projects/')) {
+      if (url === '/v2/folders/proj-1/files') {
         return Promise.resolve(axiosResponse({ files: [] }));
       }
       return Promise.reject(axiosError(404));

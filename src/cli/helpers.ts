@@ -1,5 +1,6 @@
 import * as readline from 'node:readline';
-import { loadAuthConfig, hasPat, hasCookie, type AuthConfig } from '../auth/client.js';
+import { hasCookie, hasPat, loadAuthConfig, type AuthConfig } from '../auth/client.js';
+import { executionOptions } from '../execution.js';
 import { error } from './format.js';
 
 const ID_PATTERN = /^[\w.:-]+$/;
@@ -13,8 +14,8 @@ export function validateId(value: string, label: string): string {
 }
 
 export function parsePositiveInt(value: string, label: string, fallback: number): number {
-  const n = parseInt(value, 10);
-  if (isNaN(n) || n < 1) {
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 1) {
     error(`${label} must be a positive number.`);
     process.exit(1);
   }
@@ -49,11 +50,16 @@ export function requireCookie(): AuthConfig {
 }
 
 export async function confirmAction(message: string): Promise<boolean> {
+  if (executionOptions.yes || executionOptions.dryRun) return true;
+  if (executionOptions.noInput || !process.stdin.isTTY) {
+    throw new Error('Confirmation required. Review the action and pass --yes for noninteractive execution.');
+  }
   const rl = readline.createInterface({ input: process.stdin, output: process.stderr });
   return new Promise((resolve) => {
+    rl.once('close', () => resolve(false));
     rl.question(`${message} [y/N] `, (answer) => {
-      rl.close();
       resolve(answer.trim().toLowerCase() === 'y');
+      rl.close();
     });
   });
 }

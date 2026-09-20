@@ -1,7 +1,10 @@
+import { validateInput } from '../validation.js';
 import type { AuthConfig } from '../auth/client.js';
 import { internalClient } from '../clients/internal-api.js';
+import { discoverNestedProjects } from '../clients/folder-tree.js';
 import { requireOrgId, formatApiError } from '../helpers.js';
 import { levelName } from './compound.js';
+import { checkOffboardWrite, findOffboardMember, readOffboardRoles, requireCompleteOffboardPage as requireCompletePage, revokeOffboardAccess, safeId, type OffboardProgress, type OffboardProgressHandler } from './offboard-support.js';
 
 // -- Shared helpers --
 
@@ -42,22 +45,21 @@ export async function offboardUser(
     remove_from_org?: boolean;
     org_id?: string;
   },
+  onProgress?: OffboardProgressHandler,
 ) {
+  validateInput('offboard_user', params);
   const { user_identifier, execute, transfer_to, remove_from_org } = params;
   const orgId = requireOrgId(config, params.org_id);
   const api = internalClient(config);
+  const discoveryIssues: string[] = [];
 
-  // Step 1: Resolve user
-  const userRes = await api.get(`/api/v2/orgs/${orgId}/org_users`, {
-    params: user_identifier.includes('@') ? { search_query: user_identifier } : {},
-  });
-  const rawUsers = userRes.data?.meta?.users || userRes.data?.meta || userRes.data || [];
-  const members = Array.isArray(rawUsers) ? rawUsers : [];
-  const member = members.find((m: any) =>
-    user_identifier.includes('@')
-      ? m.user?.email === user_identifier
-      : String(m.user_id) === String(user_identifier),
-  );
+  let sequence = 0;
+  const progress = async (phase: OffboardProgress['phase'], message: string, resource_id?: string, status?: string) => {
+    // A disconnected observer must not change the outcome of a workspace operation.
+    try { await onProgress?.({ operation: 'offboard_user', sequence: ++sequence, phase, message, resource_id, status }); } catch { /* Results remain authoritative. */ }
+  };
+  await progress('discovery', 'Resolving the departing member.');
+  const member = await findOffboardMember(api, orgId, user_identifier);
 
   if (!member) {
     throw new Error(`User not found: ${user_identifier}`);
@@ -81,46 +83,61 @@ export async function offboardUser(
 
   // Step 2: Fetch all org teams
   const teamsRes = await api.get(`/api/orgs/${orgId}/teams`);
-  const allTeams: any[] = (teamsRes.data?.meta || teamsRes.data || []);
+  requireCompletePage(teamsRes.data);
+  const teamData = teamsRes.data?.meta || teamsRes.data;
+  const allTeams: any[] = Array.isArray(teamData) ? teamData : teamData?.teams || [];
+  if (!Array.isArray(teamData) && !Array.isArray(teamData?.teams)) throw new Error('Cannot inspect teams: unexpected response. No changes made.');
+  if (allTeams.length > 30) discoveryIssues.push('Team discovery exceeds the 30-team limit.');
   const cappedTeams = allTeams.slice(0, 30);
 
   // Step 3: Check team membership (batched)
   const teamMemberships: Array<{ team_id: string; team_name: string; role: string }> = [];
   const memberResults = await batchProcess(cappedTeams, async (team: any) => {
-    const res = await api.get(`/api/teams/${team.id}/members`);
-    const teamMembers = res.data?.meta || res.data || [];
+    const res = await api.get(`/api/teams/${safeId(team.id)}/members`);
+    requireCompletePage(res.data);
+    const teamMembers = res.data?.meta ?? res.data;
+    if (!Array.isArray(teamMembers)) throw new Error('Unexpected team membership response.');
+    const roles = await readOffboardRoles(api, 'team', safeId(team.id));
+    const directRoles = roles.filter(role => String(role.user_id) === userId);
+    if (directRoles.length > 1) throw new Error('Multiple direct team roles found.');
+    const directRole = directRoles[0];
     const match = teamMembers.find((m: any) => String(m.id) === userId);
-    return { team, match };
+    return { team, match, directRole };
   });
 
   for (const r of memberResults) {
-    if (r.status === 'fulfilled' && r.value.match) {
-      const { team, match } = r.value;
+    if (r.status === 'rejected') discoveryIssues.push('Could not inspect a team membership.');
+    if (r.status === 'fulfilled' && (r.value.match || r.value.directRole)) {
+      const { team, match, directRole } = r.value;
       teamMemberships.push({
-        team_id: String(team.id),
+        team_id: safeId(team.id),
         team_name: team.name,
-        role: match.team_role?.level ? levelName(match.team_role.level) : 'member',
+        role: directRole?.level === 999 || match?.team_role?.level === 999 ? 'owner' : levelName(directRole?.level ?? match?.team_role?.level ?? 100),
       });
     }
   }
 
-  // Step 4: For each team the user belongs to (cap 10), get projects
-  const userTeams = teamMemberships.slice(0, 10);
-  const allProjects: Array<{ project_id: string; project_name: string; team_name: string }> = [];
+  // Direct project/file access can exist without team membership.
+  if (allTeams.length > 10) discoveryIssues.push('Project discovery exceeds the 10-team limit.');
+  const userTeams = cappedTeams.slice(0, 10).map(team => ({ team_id: safeId(team.id), team_name: team.name }));
+  let allProjects: Array<{ project_id: string; project_name: string; team_name: string }> = [];
 
   const projectResults = await batchProcess(userTeams, async (tm) => {
     const res = await api.get(`/api/teams/${tm.team_id}/folders`);
-    const raw = res.data?.meta?.folder_rows || res.data?.meta || res.data || [];
-    const folders = Array.isArray(raw) ? raw : [];
+    requireCompletePage(res.data);
+    const raw = res.data?.meta?.folder_rows ?? res.data?.meta ?? res.data;
+    if (!Array.isArray(raw)) throw new Error('Unexpected project listing response.');
+    const folders = raw;
     return { team_name: tm.team_name, folders };
   });
 
   for (const r of projectResults) {
+    if (r.status === 'rejected') discoveryIssues.push('Could not inspect projects in a team.');
     if (r.status === 'fulfilled') {
       for (const f of r.value.folders) {
-        if (allProjects.length >= 50) break;
+        if (allProjects.length >= 50) { discoveryIssues.push('Project discovery exceeds the 50-project limit.'); break; }
         allProjects.push({
-          project_id: String(f.id),
+          project_id: safeId(f.id),
           project_name: f.name,
           team_name: r.value.team_name,
         });
@@ -128,17 +145,24 @@ export async function offboardUser(
     }
   }
 
+  // Team folder listings contain only roots. Check descendants before any writes.
+  const hierarchy = await discoverNestedProjects(config, allProjects);
+  allProjects = hierarchy.projects;
+  discoveryIssues.push(...hierarchy.issues);
+
   // Step 5: Check project roles (batched)
   const projectPermissions: Array<{ project_id: string; project_name: string; team_name: string; role: string }> = [];
 
   const roleResults = await batchProcess(allProjects, async (proj) => {
-    const res = await api.get(`/api/roles/folder/${proj.project_id}`);
-    const roles = res.data?.meta || [];
-    const match = roles.find((r: any) => String(r.user_id) === userId);
+    const roles = await readOffboardRoles(api, 'folder', proj.project_id);
+    const matches = roles.filter((r: any) => String(r.user_id) === userId);
+    if (matches.length > 1) throw new Error('Multiple direct folder roles found.');
+    const match = matches[0];
     return { proj, match };
   });
 
   for (const r of roleResults) {
+    if (r.status === 'rejected') discoveryIssues.push('Could not inspect project permissions.');
     if (r.status === 'fulfilled' && r.value.match) {
       const { proj, match } = r.value;
       projectPermissions.push({
@@ -150,44 +174,53 @@ export async function offboardUser(
     }
   }
 
-  // Step 6: Sample files from projects where user has access
-  const projectsWithAccess = projectPermissions.slice(0, 10);
+  // Step 6: Inspect direct file grants and ownership within the bounded scan.
+  // Team access can be inherited without an explicit project role.
+  if (allProjects.length > 10) discoveryIssues.push('File discovery exceeds the 10-project limit.');
+  const projectsWithAccess = allProjects.slice(0, 10);
   const fileOwnership: Array<{ file_key: string; file_name: string; project_name: string; team_name: string }> = [];
+  const filePermissions: Array<{ file_key: string; file_name: string; project_name: string; team_name: string; role: string }> = [];
   let totalFilesChecked = 0;
 
   for (const proj of projectsWithAccess) {
-    if (totalFilesChecked >= 50) break;
+    if (totalFilesChecked >= 50) { discoveryIssues.push('File discovery exceeds the 50-file limit.'); break; }
 
     try {
       const filesRes = await api.get(`/api/folders/${proj.project_id}/paginated_files`, {
         params: { folderId: proj.project_id, page_size: 10 },
       });
+      requireCompletePage(filesRes.data);
       const meta = filesRes.data?.meta || filesRes.data;
-      const files = meta?.files || meta || [];
+      const files = meta?.files ?? meta;
+      if (!Array.isArray(files)) throw new Error('Unexpected file listing response');
+      const pagination = filesRes.data?.pagination || meta?.pagination;
+      if (pagination?.next_page || files.length > 10 || (files.length === 10 && !pagination)) {
+        discoveryIssues.push(`File listing is incomplete for project ${proj.project_id}.`);
+      }
+      if (files.length > 50 - totalFilesChecked) discoveryIssues.push('File discovery exceeds the 50-file limit.');
 
       const fileRoleResults = await batchProcess(
         (files as any[]).slice(0, Math.min(10, 50 - totalFilesChecked)),
         async (file: any) => {
-          const res = await api.get(`/api/roles/file/${file.key}`);
-          const roles = res.data?.meta || [];
-          const match = roles.find((r: any) => String(r.user_id) === userId && r.level === 999);
+          const roles = await readOffboardRoles(api, 'file', safeId(file.key));
+          const matches = roles.filter((r: any) => String(r.user_id) === userId);
+          if (matches.length > 1) throw new Error('Multiple direct file roles found.');
+          const match = matches[0];
           return { file, match };
         },
       );
 
       for (const r of fileRoleResults) {
         totalFilesChecked++;
+        if (r.status === 'rejected') discoveryIssues.push('Could not inspect file permissions.');
         if (r.status === 'fulfilled' && r.value.match) {
-          fileOwnership.push({
-            file_key: r.value.file.key,
-            file_name: r.value.file.name,
-            project_name: proj.project_name,
-            team_name: proj.team_name,
-          });
+          const file = { file_key: r.value.file.key, file_name: r.value.file.name, project_name: proj.project_name, team_name: proj.team_name };
+          filePermissions.push({ ...file, role: levelName(r.value.match.level) });
+          if (r.value.match.level === 999) fileOwnership.push(file);
         }
       }
     } catch {
-      // Skip projects where file listing fails
+      discoveryIssues.push(`Could not list files in project ${proj.project_id}.`);
     }
   }
 
@@ -195,12 +228,36 @@ export async function offboardUser(
     teams: teamMemberships.length,
     projects_with_access: projectPermissions.length,
     files_owned: fileOwnership.length,
+    files_with_access: filePermissions.length,
   };
+  const ownershipHandoffs = [
+    ...teamMemberships.filter(team => team.role === 'owner').map(team => ({ resource_type: 'team', resource_id: team.team_id, name: team.team_name })),
+    ...projectPermissions.filter(project => project.role === 'owner').map(project => ({ resource_type: 'folder', resource_id: project.project_id, name: project.project_name })),
+  ];
+  const executionBlockers: Array<{ code: string; resource_type: string; resource_id: string; message: string }> = ownershipHandoffs.map(resource => ({ code: 'ownership_handoff_required', ...resource, message: 'Transfer team/folder ownership in Figma, then rerun the audit.' }));
+  if (!remove_from_org && /admin|owner/i.test(user.permission ?? '')) {
+    executionBlockers.push({ code: 'admin_role_retained', resource_type: 'organization', resource_id: orgId,
+      message: 'Soft offboarding retains this administrative role. Change it in Figma and rerun the audit, or explicitly request organization removal.' });
+  }
+  const coverage = {
+    scope: 'visible_organization_resources',
+    checked: ['team_memberships', 'folder_roles', 'direct_file_roles', 'file_ownership'],
+    not_checked: ['group_memberships', 'workspace_and_billing_admin_roles', 'drafts', 'public_and_org_wide_links', 'identity_provider', 'resources_outside_visible_scope'],
+  };
+  const remainingWork = [
+    { code: 'groups_and_admin_roles', message: 'Review group membership and administrative roles; these are not changed by this workflow.' },
+    { code: 'draft_handoff', message: 'Review drafts and, after organization removal, recover unassigned drafts in Figma Admin.' },
+    { code: 'external_access', message: 'Review identity-provider access, public links, and resources outside the visible organization scope.' },
+    ...(!remove_from_org ? [{ code: 'organization_access_retained', message: `User remains in the organization with permission ${user.permission ?? 'unknown'}. Organization-wide and group-based access may remain.` }] : []),
+  ];
+  await progress('discovery', 'Resource discovery finished.');
 
   const transferPlan: string[] = [];
   if (fileOwnership.length > 0) {
     transferPlan.push(`${fileOwnership.length} file(s) need ownership transfer before removal.`);
   }
+  if (filePermissions.length > 0) transferPlan.push(`Revoke direct access to ${filePermissions.length} file(s).`);
+  for (const handoff of ownershipHandoffs) transferPlan.push(`Transfer ${handoff.resource_type} ownership: ${handoff.name}.`);
   if (teamMemberships.length > 0) {
     transferPlan.push(`Remove from ${teamMemberships.length} team(s).`);
   }
@@ -213,18 +270,34 @@ export async function offboardUser(
 
   // Audit-only mode
   if (!execute) {
+    await progress('complete', 'Read-only audit finished. Review coverage and execution blockers.', undefined, discoveryIssues.length || executionBlockers.length ? 'incomplete' : 'done');
     return {
       user,
       team_memberships: teamMemberships,
       project_permissions: projectPermissions,
       file_ownership: fileOwnership,
+      file_permissions: filePermissions,
+      ownership_handoffs: ownershipHandoffs,
+      execution_blockers: executionBlockers,
+      coverage,
+      remaining_work: remainingWork,
       summary,
       transfer_plan: transferPlan,
-      note: 'Run with execute=true to perform offboarding. Provide transfer_to if the user owns files. Add remove_from_org=true to fully remove from the org (permanent).',
+      discovery: { complete: discoveryIssues.length === 0, issues: discoveryIssues },
+      note: discoveryIssues.length > 0
+        ? 'Discovery is incomplete. Resolve the reported issues before executing offboarding. No changes made.'
+        : executionBlockers.length > 0
+          ? 'Resolve execution_blockers before executing. No changes made.'
+          : 'Review coverage and remaining_work before running execute=true. Provide transfer_to for owned files. Organization removal requires remove_from_org=true.',
     };
   }
 
   // --- Execute mode ---
+  if (discoveryIssues.length > 0) {
+    throw new Error(`Offboarding blocked: ownership discovery is incomplete. ${discoveryIssues.join(' ')} No changes made.`);
+  }
+
+  if (executionBlockers.length > 0) throw new Error(`Offboarding blocked: ${executionBlockers.map(blocker => blocker.message).join(' ')} No changes made.`);
 
   // Validate: if user owns files, transfer_to is required
   if (fileOwnership.length > 0 && !transfer_to) {
@@ -235,23 +308,17 @@ export async function offboardUser(
 
   // Resolve transfer_to user
   let transferToUserId: string | undefined;
+  let transferToEmail: string | undefined;
   if (transfer_to) {
-    const tRes = await api.get(`/api/v2/orgs/${orgId}/org_users`, {
-      params: transfer_to.includes('@') ? { search_query: transfer_to } : {},
-    });
-    const tUsers = tRes.data?.meta?.users || tRes.data?.meta || tRes.data || [];
-    const tList = Array.isArray(tUsers) ? tUsers : [];
-    const tMatch = tList.find((m: any) =>
-      transfer_to.includes('@')
-        ? m.user?.email === transfer_to
-        : String(m.user_id) === String(transfer_to),
-    );
+    const tMatch = await findOffboardMember(api, orgId, transfer_to);
     if (!tMatch) throw new Error(`Transfer target not found: ${transfer_to}`);
     transferToUserId = String(tMatch.user_id);
+    transferToEmail = tMatch.user?.email;
+    if (transferToUserId === userId) throw new Error('Transfer target must differ from the departing user.');
   }
 
   // Cap total mutations
-  const totalMutations = fileOwnership.length + teamMemberships.length + projectPermissions.length + 1;
+  const totalMutations = fileOwnership.length * 3 + filePermissions.length + teamMemberships.length + projectPermissions.length + (user.seat_type ? 1 : 0) + (remove_from_org ? 1 : 0);
   if (totalMutations > MAX_REVOCATIONS) {
     throw new Error(
       `Offboarding would require ${totalMutations} mutations (cap: ${MAX_REVOCATIONS}). ` +
@@ -259,146 +326,140 @@ export async function offboardUser(
     );
   }
 
-  const actions: Array<{ action: string; status: string; detail?: string }> = [];
+  const actions: Array<{ action: string; status: string; resource_id?: string; detail?: string }> = [];
+  const record = async (phase: OffboardProgress['phase'], action: string, resource_id: string, detail: string, error?: unknown) => {
+    const message = error ? formatApiError(error) : detail;
+    const status = error ? /outcome unknown/i.test(message) ? 'unknown' : 'failed' : 'done';
+    actions.push({ action, status, resource_id, detail: error ? `${detail}: ${message}` : detail });
+    await progress(phase, action, resource_id, status);
+  };
+  const finish = async (note: string, blocked: string[] = []) => {
+    const succeeded = actions.filter(action => action.status === 'done').length;
+    const failed = actions.filter(action => action.status === 'failed').length;
+    const unknown = actions.filter(action => action.status === 'unknown').length;
+    await progress('complete', note, undefined, failed || unknown || blocked.length ? 'incomplete' : 'done');
+    const retained = remove_from_org && !actions.some(action => action.action === 'remove_from_org' && action.status === 'done')
+      ? [{ code: 'organization_membership_unverified', message: 'Organization removal is not verified. Inspect membership before retrying.' }] : [];
+    return { user, executed: true, actions, summary: { succeeded, failed, unknown, total: actions.length },
+      coverage, remaining_work: [...remainingWork, ...retained], blocked,
+      completion: { scope: 'planned_changes', verified: failed === 0 && unknown === 0 && blocked.length === 0, follow_up_required: true }, note };
+  };
 
-  // Step A: Transfer file ownership
-  if (fileOwnership.length > 0 && transferToUserId) {
-    for (const file of fileOwnership) {
-      try {
-        // Get the role entry for the file
-        const rolesRes = await api.get(`/api/roles/file/${file.file_key}`);
-        const roles = rolesRes.data?.meta || [];
-        const ownerRole = roles.find((r: any) => String(r.user_id) === userId && r.level === 999);
-        const transfereeRole = roles.find((r: any) => String(r.user_id) === transferToUserId);
-
-        // Give transfer target owner access
-        if (transfereeRole) {
-          await api.put(`/api/roles/${transfereeRole.id}`, { level: 999 });
-        } else {
-          // Invite as editor first, then promote -- can't directly set owner on uninvited user
-          await api.post('/api/invites', {
-            resource_type: 'file',
-            resource_id_or_key: file.file_key,
-            emails: [transfer_to],
-            level: 300,
-          });
-          // Re-fetch roles to get the new role ID
-          const rolesRes2 = await api.get(`/api/roles/file/${file.file_key}`);
-          const roles2 = rolesRes2.data?.meta || [];
-          const newRole = roles2.find((r: any) => String(r.user_id) === transferToUserId);
-          if (newRole) {
-            await api.put(`/api/roles/${newRole.id}`, { level: 999 });
-          }
-        }
-
-        // Downgrade departing user from owner to editor (can't revoke owner directly)
-        if (ownerRole) {
-          await api.put(`/api/roles/${ownerRole.id}`, { level: 300 });
-        }
-
-        actions.push({ action: 'transfer_ownership', status: 'done', detail: `${file.file_name} -> ${transfer_to}` });
-      } catch (e: any) {
-        actions.push({ action: 'transfer_ownership', status: 'failed', detail: `${file.file_name}: ${formatApiError(e)}` });
-      }
-    }
-  }
-
-  // Step B: Revoke file access (now that they're no longer owner)
+  // Transfer ownership before revoking any access. Every write is checked by a read.
   for (const file of fileOwnership) {
     try {
-      const rolesRes = await api.get(`/api/roles/file/${file.file_key}`);
-      const roles = rolesRes.data?.meta || [];
-      const role = roles.find((r: any) => String(r.user_id) === userId);
-      if (role) {
-        await api.delete(`/api/roles/${role.id}`);
-        actions.push({ action: 'revoke_file', status: 'done', detail: file.file_name });
+      const roles = await readOffboardRoles(api, 'file', file.file_key);
+      const ownerRole = roles.find(role => String(role.user_id) === userId && role.level === 999);
+      const transfereeRoles = roles.filter(role => String(role.user_id) === transferToUserId);
+      if (transfereeRoles.length > 1) throw new Error('Multiple replacement-owner roles found. Inspect permissions before retrying.');
+      let transfereeRole = transfereeRoles[0];
+      if (!ownerRole && transfereeRole?.level !== 999) throw new Error('Ownership changed since the audit. Run a fresh audit before retrying.');
+      if (!transfereeRole) {
+        if (!transferToEmail) throw new Error('Replacement owner email unavailable; invite them to the file before retrying.');
+        checkOffboardWrite(await api.post('/api/invites', {
+          resource_type: 'file', resource_id_or_key: file.file_key, emails: [transferToEmail], level: 300,
+        }));
+        const invited = (await readOffboardRoles(api, 'file', file.file_key)).filter(role => String(role.user_id) === transferToUserId);
+        if (invited.length !== 1) throw new Error('Replacement owner has no unique role yet. Complete the invitation before retrying.');
+        transfereeRole = invited[0];
       }
-    } catch (e: any) {
-      actions.push({ action: 'revoke_file', status: 'failed', detail: `${file.file_name}: ${formatApiError(e)}` });
+      if (transfereeRole.level !== 999) checkOffboardWrite(await api.put(`/api/roles/${safeId(transfereeRole.id)}`, { level: 999 }));
+      const verified = await readOffboardRoles(api, 'file', file.file_key);
+      if (!verified.some(role => String(role.user_id) === transferToUserId && role.level === 999)) {
+        throw new Error('Ownership transfer could not be verified. Access was not revoked.');
+      }
+      // Figma may already downgrade the old owner when the replacement is promoted.
+      const previousOwner = verified.find(role => String(role.user_id) === userId && role.level === 999);
+      if (previousOwner) checkOffboardWrite(await api.put(`/api/roles/${safeId(previousOwner.id)}`, { level: 300 }));
+      const after = await readOffboardRoles(api, 'file', file.file_key);
+      if (after.some(role => String(role.user_id) === userId && role.level === 999)
+        || !after.some(role => String(role.user_id) === transferToUserId && role.level === 999)) {
+        throw new Error('Final ownership state could not be verified. Access was not revoked.');
+      }
+      await record('transfer', 'transfer_ownership', file.file_key, `${file.file_name} -> ${transfer_to}`);
+    } catch (error) {
+      await record('transfer', 'transfer_ownership', file.file_key, file.file_name, error);
+      return finish('Offboarding stopped during ownership transfer. Inspect current state before retrying.', ['revoke_access', 'downgrade_seat', 'remove_from_org']);
     }
   }
 
-  // Step C: Revoke project access
-  const projResults = await batchProcess(projectPermissions, async (proj) => {
-    const rolesRes = await api.get(`/api/roles/folder/${proj.project_id}`);
-    const roles = rolesRes.data?.meta || [];
-    const role = roles.find((r: any) => String(r.user_id) === userId);
-    if (role) await api.delete(`/api/roles/${role.id}`);
-    return proj;
-  });
-  for (let i = 0; i < projectPermissions.length; i++) {
-    const r = projResults[i];
-    actions.push({
-      action: 'revoke_project',
-      status: r.status === 'fulfilled' ? 'done' : 'failed',
-      detail: projectPermissions[i].project_name,
-    });
+  const resources = [
+    ...filePermissions.map(file => ({ type: 'file', id: file.file_key, name: file.file_name, action: 'revoke_file' })),
+    ...projectPermissions.map(project => ({ type: 'folder', id: project.project_id, name: project.project_name, action: 'revoke_project' })),
+    ...teamMemberships.map(team => ({ type: 'team', id: team.team_id, name: team.team_name, action: 'revoke_team' })),
+  ];
+  for (const resource of resources) {
+    try {
+      // Recheck replacement ownership immediately before removing file access.
+      if (resource.type === 'file' && fileOwnership.some(file => file.file_key === resource.id)) {
+        const roles = await readOffboardRoles(api, 'file', resource.id);
+        if (!roles.some(role => String(role.user_id) === transferToUserId && role.level === 999)) throw new Error('Replacement ownership changed. Run a fresh audit.');
+      }
+      await revokeOffboardAccess(api, resource.type, resource.id, userId);
+      if (resource.type === 'team') {
+        const res = await api.get(`/api/teams/${resource.id}/members`);
+        requireCompletePage(res.data);
+        const members = res.data.meta ?? res.data;
+        if (!Array.isArray(members) || members.some((row: any) => String(row.id) === userId)) throw new Error('Team membership removal could not be verified.');
+      }
+      await record('revoke', resource.action, resource.id, resource.name);
+    } catch (error) {
+      await record('revoke', resource.action, resource.id, resource.name, error);
+      return finish('Offboarding stopped during access removal. Inspect current state before retrying.', ['remaining_access_changes', 'downgrade_seat', 'remove_from_org']);
+    }
   }
 
-  // Step D: Revoke team memberships
-  const teamResults = await batchProcess(teamMemberships, async (tm) => {
-    const rolesRes = await api.get(`/api/roles/team/${tm.team_id}`);
-    const roles = rolesRes.data?.meta || [];
-    const role = roles.find((r: any) => String(r.user_id) === userId);
-    if (role) await api.delete(`/api/roles/${role.id}`);
-    return tm;
-  });
-  for (let i = 0; i < teamMemberships.length; i++) {
-    const r = teamResults[i];
-    actions.push({
-      action: 'revoke_team',
-      status: r.status === 'fulfilled' ? 'done' : 'failed',
-      detail: teamMemberships[i].team_name,
-    });
-  }
-
-  // Step E: Downgrade seat to viewer
+  // Use fresh member metadata for the seat update and verify the resulting seat.
   if (user.seat_type) {
     try {
-      const viewStatuses: Record<string, string> = { collaborator: 'starter', developer: 'starter', expert: 'starter' };
-      await api.put(`/api/orgs/${orgId}/org_users`, {
-        org_user_ids: [user.org_user_id],
-        paid_statuses: viewStatuses,
-        entry_point: 'members_tab',
-        seat_increase_authorized: 'true',
-        seat_swap_intended: 'false',
-        latest_ou_update: member.updated_at,
-        showing_billing_groups: 'true',
-      }, {
-        'axios-retry': { retries: 0 },
-      } as any);
-      actions.push({ action: 'downgrade_seat', status: 'done', detail: `${user.seat_type} -> viewer` });
-    } catch (e: any) {
-      actions.push({ action: 'downgrade_seat', status: 'failed', detail: formatApiError(e) });
+      const current = await findOffboardMember(api, orgId, userId);
+      if (!current) throw new Error('Member disappeared during offboarding. Run a fresh audit.');
+      const seat = current.active_seat_type?.key;
+      if (!['view', 'viewer', 'starter'].includes(seat)) {
+        checkOffboardWrite(await api.put(`/api/orgs/${orgId}/org_users`, {
+          org_user_ids: [user.org_user_id],
+          paid_statuses: { collaborator: 'starter', developer: 'starter', expert: 'starter' },
+          entry_point: 'members_tab', seat_increase_authorized: 'true', seat_swap_intended: 'false',
+          latest_ou_update: current.updated_at, showing_billing_groups: 'true',
+        }, { 'axios-retry': { retries: 0 } } as any));
+      }
+      const verified = await findOffboardMember(api, orgId, userId);
+      if (!verified || !['view', 'viewer', 'starter'].includes(verified.active_seat_type?.key)) throw new Error('Viewer seat could not be verified.');
+      await record('seat', 'downgrade_seat', user.org_user_id, `${user.seat_type} -> viewer`);
+    } catch (error) {
+      await record('seat', 'downgrade_seat', user.org_user_id, 'Seat change', error);
+      return finish('Offboarding stopped at seat verification. Inspect current state before retrying.', ['remove_from_org']);
     }
   }
 
-  // Step F: Remove from org (permanent, requires remove_from_org flag)
+  // Reconcile the discovered grants after all access and seat changes.
+  try {
+    for (const resource of resources) {
+      const roles = await readOffboardRoles(api, resource.type, resource.id);
+      if (roles.some(role => String(role.user_id) === userId)) throw new Error(`Direct access remains on ${resource.type} ${resource.id}.`);
+      if (resource.type === 'file' && fileOwnership.some(file => file.file_key === resource.id)
+        && !roles.some(role => String(role.user_id) === transferToUserId && role.level === 999)) throw new Error(`Replacement ownership is missing on file ${resource.id}.`);
+    }
+    await record('verification', 'verify_access_changes', orgId, 'Discovered direct grants are absent; transferred file owners are verified.');
+  } catch (error) {
+    await record('verification', 'verify_access_changes', orgId, 'Final access verification', error);
+    return finish('Final access verification failed. Run a fresh audit before continuing.', ['remove_from_org']);
+  }
+
   if (remove_from_org) {
     try {
-      await api.delete(`/api/orgs/${orgId}/org_users`, {
-        data: { org_user_ids: [user.org_user_id] },
-      });
-      actions.push({ action: 'remove_from_org', status: 'done', detail: 'Permanently removed from org' });
-    } catch (e: any) {
-      actions.push({ action: 'remove_from_org', status: 'failed', detail: formatApiError(e) });
+      checkOffboardWrite(await api.delete(`/api/orgs/${orgId}/org_users`, { data: { org_user_ids: [user.org_user_id] } }));
+      if (await findOffboardMember(api, orgId, userId)) throw new Error('Organization removal could not be verified.');
+      await record('membership', 'remove_from_org', user.org_user_id, 'Organization removal verified');
+    } catch (error) {
+      await record('membership', 'remove_from_org', user.org_user_id, 'Organization removal', error);
+      return finish('Organization removal was not verified. Inspect membership before retrying.');
     }
   }
 
-  const succeeded = actions.filter(a => a.status === 'done').length;
-  const failed = actions.filter(a => a.status === 'failed').length;
-
-  return {
-    user,
-    executed: true,
-    actions,
-    summary: { succeeded, failed, total: actions.length },
-    note: failed > 0
-      ? `${failed} action(s) failed. Review and retry manually.`
-      : remove_from_org
-        ? 'Offboarding complete. User permanently removed from org.'
-        : 'Offboarding complete. User remains in org (use remove_from_org=true to fully remove).',
-  };
+  return finish(remove_from_org
+    ? 'Planned changes verified, including organization removal. Review remaining_work for drafts and other follow-up.'
+    : 'Planned direct-access changes verified. User remains in the organization; review remaining_work for other access paths.');
 }
 
 // -- onboard_user --
@@ -415,6 +476,7 @@ export async function onboardUser(
     org_id?: string;
   },
 ) {
+  validateInput('onboard_user', params);
   const { email, team_ids, role, share_files, seat_type, confirm } = params;
   const orgId = requireOrgId(config, params.org_id);
 
@@ -544,6 +606,7 @@ export async function quarterlyDesignOpsReport(
   config: AuthConfig,
   params: { org_id?: string; days: number },
 ) {
+  validateInput('quarterly_design_ops_report', params);
   const { days } = params;
   const orgId = requireOrgId(config, params.org_id);
   const api = internalClient(config);

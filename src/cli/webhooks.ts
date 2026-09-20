@@ -1,14 +1,13 @@
 import { Command } from 'commander';
+import type { WebhookEventType, WebhookStatus } from '../operations/webhooks.js';
 import {
-  listWebhooks,
   createWebhook,
-  updateWebhook,
   deleteWebhook,
+  listWebhooks,
+  updateWebhook,
   webhookRequests,
 } from '../operations/webhooks.js';
-import type { WebhookEventType, WebhookStatus } from '../operations/webhooks.js';
-import { output, error } from './format.js';
-import { formatApiError } from '../helpers.js';
+import { fail, output, outputEmpty } from './format.js';
 import { requirePat } from './helpers.js';
 
 const VALID_EVENT_TYPES = [
@@ -33,13 +32,12 @@ export function webhooksCommand(): Command {
         const config = requirePat();
         const result = await listWebhooks(config, { team_id: teamId });
         if (result.webhooks.length === 0) {
-          console.log('No webhooks found.');
+          outputEmpty(result, 'No webhooks found.', { ...options, collection: 'webhooks' });
           return;
         }
-        output(result, options);
+        output(result, { ...options, collection: 'webhooks' });
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -69,8 +67,7 @@ export function webhooksCommand(): Command {
         });
         output(result, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -103,8 +100,7 @@ export function webhooksCommand(): Command {
         });
         output(result, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -117,13 +113,12 @@ export function webhooksCommand(): Command {
         const config = requirePat();
         const result = await webhookRequests(config, { webhook_id: webhookId });
         if (result.requests.length === 0) {
-          console.log('No webhook deliveries in the last 7 days.');
+          outputEmpty(result, 'No webhook deliveries in the last 7 days.', { ...options, collection: 'requests' });
           return;
         }
-        output(result, options);
+        output(result, { ...options, collection: 'requests' });
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -136,14 +131,12 @@ export function webhooksCommand(): Command {
         const config = requirePat();
         const { confirmAction } = await import('./helpers.js');
         if (!await confirmAction(`Delete webhook ${webhookId}?`)) {
-          console.log('Cancelled.');
-          return;
+          throw new Error('Cancelled. No changes made.');
         }
         await deleteWebhook(config, { webhook_id: webhookId });
         output({ deleted: webhookId }, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 

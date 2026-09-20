@@ -1,0 +1,53 @@
+import assert from 'node:assert/strict';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
+import { spawnSync } from 'node:child_process';
+
+const binary = resolve(process.argv[2] || 'dist/index.js');
+const requirePackage = createRequire(binary);
+const { Client } = await import(pathToFileURL(requirePackage.resolve('@modelcontextprotocol/sdk/client/index.js')).href);
+const { StdioClientTransport } = await import(pathToFileURL(requirePackage.resolve('@modelcontextprotocol/sdk/client/stdio.js')).href);
+const directory = mkdtempSync(join(tmpdir(), 'figmanage-runtime-'));
+const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^FIGMA|^NODE_OPTIONS/.test(key)));
+Object.assign(env, { FIGMANAGE_CONFIG_DIR: directory, FIGMA_PAT: 'test-pat' });
+const client = new Client({ name: 'runtime-smoke', version: '1' });
+try {
+  const schema = spawnSync(process.execPath, [binary, 'schema'], { env, encoding: 'utf8', maxBuffer: 4 * 1024 * 1024 });
+  assert.equal(schema.status, 0, schema.stderr);
+  assert.equal(JSON.parse(schema.stdout).operations.length, 102);
+  const jsonl = spawnSync(process.execPath, [binary, 'schema', '--jsonl'], { env, encoding: 'utf8', maxBuffer: 4 * 1024 * 1024 });
+  assert.equal(jsonl.status, 0, jsonl.stderr);
+  const records = jsonl.stdout.trimEnd().split('\n').map(line => JSON.parse(line));
+  assert.equal(records[0].data.operations.length, 102);
+  assert.deepEqual(records.at(-1), { type: 'summary', ok: true, count: 1 });
+  const clientConfig = spawnSync(process.execPath, [binary, 'mcp-config', 'vscode', '--local', '--jsonl'], { env, encoding: 'utf8' });
+  assert.equal(clientConfig.status, 0, clientConfig.stderr);
+  const clientRecords = clientConfig.stdout.trimEnd().split('\n').map(line => JSON.parse(line));
+  const serverConfig = JSON.parse(clientRecords[0].data.config).servers.figmanage;
+  assert.equal(serverConfig.command, process.execPath);
+  assert.deepEqual(serverConfig.args, [binary, '--mcp']);
+  assert.deepEqual(clientRecords.at(-1), { type: 'summary', ok: true, count: 1 });
+  const skills = spawnSync(process.execPath, [binary, 'skills', '--json'], { env, encoding: 'utf8' });
+  assert.equal(skills.status, 0, skills.stderr);
+  assert.ok(readFileSync(JSON.parse(skills.stdout)[0].path, 'utf8').includes('name: figmanage'));
+  const doctor = spawnSync(process.execPath, [binary, 'doctor', '--jsonl'], { env: { ...env, FIGMA_PAT: '' }, encoding: 'utf8' });
+  assert.equal(doctor.status, 1);
+  const checks = doctor.stdout.trimEnd().split('\n').map(line => JSON.parse(line));
+  assert.equal(checks[0].data.credential_source, 'none');
+  assert.equal(checks.at(-1).ok, false);
+  const transport = new StdioClientTransport({ ...serverConfig, env, stderr: 'pipe' });
+  transport.stderr?.resume();
+  await client.connect(transport);
+  const { tools } = await client.listTools();
+  assert.ok(tools.some(tool => tool.name === 'list_comments'));
+  assert.ok(!tools.some(tool => tool.name === 'create_file'));
+  assert.ok(tools.some(tool => tool.name === 'setup_status'));
+  assert.ok(client.getInstructions().includes('official Figma MCP'));
+  console.log(`Runtime smoke passed on ${process.version}: CLI schema, client config, doctor, bundled skill, and MCP initialize/list/instructions.`);
+} finally {
+  await client.close();
+  rmSync(directory, { recursive: true, force: true });
+}

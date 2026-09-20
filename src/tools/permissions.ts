@@ -1,17 +1,17 @@
-import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { AuthConfig } from '../auth/client.js';
-import { defineTool, toolResult, toolError, toolSummary, figmaId } from './register.js';
 import { formatApiError } from '../helpers.js';
 import {
-  getPermissions,
-  setPermissions,
-  share,
-  revokeAccess,
-  listRoleRequests,
   approveRoleRequest,
   denyRoleRequest,
+  getPermissions,
+  listRoleRequests,
+  revokeAccess,
+  setPermissions,
+  share,
 } from '../operations/permissions.js';
+import { inputSchemas } from '../schemas.js';
+import { defineTool, toolError, toolResult, toolSummary } from './register.js';
 
 // -- get_permissions --
 
@@ -23,10 +23,7 @@ defineTool({
       'get_permissions',
       {
         description: 'See who has access to a file, project, or team. Returns users with roles and role IDs.',
-        inputSchema: {
-          resource_type: z.enum(['file', 'folder', 'team']).describe('Type of resource'),
-          resource_id: figmaId.describe('Resource ID (file key, folder ID, or team ID)'),
-        },
+        inputSchema: inputSchemas.get_permissions,
       },
       async ({ resource_type, resource_id }) => {
         try {
@@ -51,12 +48,7 @@ defineTool({
       'set_permissions',
       {
         description: 'Change access level for a user on a file, project, or team. Looks up the role by user_id.',
-        inputSchema: {
-          resource_type: z.enum(['file', 'folder', 'team']).describe('Type of resource'),
-          resource_id: figmaId.describe('Resource ID'),
-          user_id: figmaId.describe('User ID to change access for'),
-          role: z.enum(['owner', 'editor', 'viewer']).describe('Role to assign'),
-        },
+        inputSchema: inputSchemas.set_permissions,
       },
       async ({ resource_type, resource_id, user_id, role }) => {
         try {
@@ -81,19 +73,14 @@ defineTool({
       'share',
       {
         description: 'Share a file or project with someone by email. Sends an invite.',
-        inputSchema: {
-          resource_type: z.enum(['file', 'folder', 'team']).describe('Type of resource'),
-          resource_id: figmaId.describe('Resource ID (file key, folder ID, or team ID)'),
-          email: z.string().describe('Email address to invite'),
-          role: z.enum(['editor', 'viewer']).optional().describe('Role to grant (default: viewer)'),
-        },
+        inputSchema: inputSchemas.share,
       },
       async ({ resource_type, resource_id, email, role }) => {
         try {
           const result = await share(config, { resource_type, resource_id, email, role });
           let msg = `Invited ${result.email} as ${result.role} on ${result.resource_type} ${result.resource_id}`;
           if (result.role_id) msg += ` (role_id: ${result.role_id})`;
-          return toolResult(msg);
+          return toolResult(msg, result);
         } catch (e: any) {
           return toolError(`Failed to share: ${formatApiError(e)}`);
         }
@@ -114,11 +101,7 @@ defineTool({
       'revoke_access',
       {
         description: "Remove a user's access to a file, project, or team. The user loses access immediately.",
-        inputSchema: {
-          resource_type: z.enum(['file', 'folder', 'team']).describe('Type of resource'),
-          resource_id: figmaId.describe('Resource ID'),
-          user_id: figmaId.describe('User ID to revoke access from'),
-        },
+        inputSchema: inputSchemas.revoke_access,
       },
       async ({ resource_type, resource_id, user_id }) => {
         try {
@@ -143,12 +126,12 @@ defineTool({
       'list_role_requests',
       {
         description: 'List pending file access requests. These come through the notification system.',
-        inputSchema: {},
+        inputSchema: inputSchemas.list_role_requests,
       },
       async () => {
         try {
           const result = await listRoleRequests(config);
-          if (result.length === 0) return toolResult('No pending access requests.');
+          if (result.length === 0) return toolResult('No pending access requests.', result);
           return toolSummary(`${result.length} pending request(s).`, result, 'Use approve_role_request or deny_role_request.');
         } catch (e: any) {
           return toolError(`Failed to list role requests: ${formatApiError(e)}`);
@@ -170,9 +153,7 @@ defineTool({
       'approve_role_request',
       {
         description: 'Approve a pending file access request by notification ID.',
-        inputSchema: {
-          notification_id: figmaId.describe('Notification ID from list_role_requests'),
-        },
+        inputSchema: inputSchemas.approve_role_request,
       },
       async ({ notification_id }) => {
         try {
@@ -198,9 +179,7 @@ defineTool({
       'deny_role_request',
       {
         description: 'Decline a pending file access request by notification ID.',
-        inputSchema: {
-          notification_id: figmaId.describe('Notification ID from list_role_requests'),
-        },
+        inputSchema: inputSchemas.deny_role_request,
       },
       async ({ notification_id }) => {
         try {

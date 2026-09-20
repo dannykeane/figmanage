@@ -1,3 +1,4 @@
+import { validateInput } from '../validation.js';
 import type { AuthConfig } from '../auth/client.js';
 import { internalClient } from '../clients/internal-api.js';
 import { resolveOrgId } from '../helpers.js';
@@ -19,6 +20,16 @@ export interface MoveResult {
   succeeded: number;
   failed: number;
   errors?: Record<string, unknown>;
+  unknown?: number;
+}
+
+function batchResult(data: any, requested: string[]): MoveResult {
+  const success = data?.success || {};
+  const errors = data?.errors || {};
+  const succeeded = requested.filter(key => Object.prototype.hasOwnProperty.call(success, key)).length;
+  const failed = requested.filter(key => Object.prototype.hasOwnProperty.call(errors, key)).length;
+  const unknown = requested.filter(key => !Object.prototype.hasOwnProperty.call(success, key) && !Object.prototype.hasOwnProperty.call(errors, key)).length;
+  return { succeeded, failed, ...(failed ? { errors } : {}), ...(unknown ? { unknown } : {}) };
 }
 
 export async function createFile(
@@ -29,6 +40,7 @@ export async function createFile(
     org_id?: string;
   },
 ): Promise<CreatedFile> {
+  validateInput('create_file', params);
   const res = await internalClient(config).post('/api/files/create', {
     folder_id: params.project_id,
     org_id: resolveOrgId(config, params.org_id),
@@ -47,6 +59,7 @@ export async function renameFile(
   config: AuthConfig,
   params: { file_key: string; name: string },
 ): Promise<void> {
+  validateInput('rename_file', params);
   await internalClient(config).put(`/api/files/${params.file_key}`, {
     key: params.file_key,
     name: params.name,
@@ -57,6 +70,7 @@ export async function moveFiles(
   config: AuthConfig,
   params: { file_keys: string[]; destination_project_id: string },
 ): Promise<MoveResult> {
+  validateInput('move_files', params);
   const files = params.file_keys.map(key => ({
     key,
     folder_id: params.destination_project_id,
@@ -65,19 +79,14 @@ export async function moveFiles(
   }));
   const res = await internalClient(config).put('/api/files_batch', { files });
   const data = res.data?.meta || res.data;
-  const succeeded = Object.keys(data.success || {}).length;
-  const failed = Object.keys(data.errors || {}).length;
-  return {
-    succeeded,
-    failed,
-    errors: failed > 0 ? data.errors : undefined,
-  };
+  return batchResult(data, params.file_keys);
 }
 
 export async function duplicateFile(
   config: AuthConfig,
   params: { file_key: string; project_id?: string },
 ): Promise<DuplicatedFile> {
+  validateInput('duplicate_file', params);
   const res = await internalClient(config).post(
     `/api/multiplayer/${params.file_key}/copy`,
     null,
@@ -97,36 +106,32 @@ export async function duplicateFile(
 export async function trashFiles(
   config: AuthConfig,
   params: { file_keys: string[] },
-): Promise<{ succeeded: number }> {
+): Promise<MoveResult> {
+  validateInput('trash_files', params);
   const files = params.file_keys.map(key => ({ key }));
   const res = await internalClient(config).delete('/api/files_batch', {
     data: { files, trashed: true },
   });
   const data = res.data?.meta || res.data;
-  const succeeded = Object.keys(data.success || {}).length;
-  return { succeeded };
+  return batchResult(data, params.file_keys);
 }
 
 export async function restoreFiles(
   config: AuthConfig,
   params: { file_keys: string[] },
 ): Promise<MoveResult> {
+  validateInput('restore_files', params);
   const files = params.file_keys.map(key => ({ key }));
   const res = await internalClient(config).post('/api/files_batch/restore', { files });
   const data = res.data?.meta || res.data;
-  const succeeded = Object.keys(data?.success || {}).length || params.file_keys.length;
-  const failed = Object.keys(data?.errors || {}).length;
-  return {
-    succeeded,
-    failed,
-    errors: failed > 0 ? data.errors : undefined,
-  };
+  return batchResult(data, params.file_keys);
 }
 
 export async function favoriteFile(
   config: AuthConfig,
   params: { file_key: string; favorited?: boolean },
 ): Promise<{ favorited: boolean }> {
+  validateInput('favorite_file', params);
   const isFavorited = params.favorited !== false;
   await internalClient(config).put('/api/favorited_resources', {
     resource_type: 'file',
@@ -140,6 +145,7 @@ export async function setLinkAccess(
   config: AuthConfig,
   params: { file_key: string; link_access?: string },
 ): Promise<{ link_access: string }> {
+  validateInput('set_link_access', params);
   const res = await internalClient(config).put(`/api/files/${params.file_key}`, {
     link_access: params.link_access || 'inherit',
   });

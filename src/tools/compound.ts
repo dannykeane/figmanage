@@ -1,19 +1,19 @@
-import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { AuthConfig } from '../auth/client.js';
-import { defineTool, toolResult, toolError, toolSummary, figmaId } from './register.js';
 import { formatApiError } from '../helpers.js';
 import {
-  fileSummary,
-  workspaceOverview,
-  openComments,
-  cleanupStaleFiles,
-  organizeProject,
-  setupProjectStructure,
-  seatOptimization,
-  permissionAudit,
   branchCleanup,
+  cleanupStaleFiles,
+  fileSummary,
+  openComments,
+  organizeProject,
+  permissionAudit,
+  seatOptimization,
+  setupProjectStructure,
+  workspaceOverview,
 } from '../operations/compound.js';
+import { inputSchemas } from '../schemas.js';
+import { defineTool, toolError, toolSummary } from './register.js';
 
 // -- file_summary --
 
@@ -25,9 +25,7 @@ defineTool({
       'file_summary',
       {
         description: 'Quick overview of a Figma file. Fetches pages, components, styles, and comment counts in parallel.',
-        inputSchema: {
-          file_key: figmaId.describe('File key'),
-        },
+        inputSchema: inputSchemas.file_summary,
       },
       async ({ file_key }) => {
         try {
@@ -55,9 +53,7 @@ defineTool({
       'workspace_overview',
       {
         description: 'Full org snapshot: teams with member/project counts, seat breakdown, and billing summary.',
-        inputSchema: {
-          org_id: figmaId.optional().describe('Org ID override (defaults to current workspace)'),
-        },
+        inputSchema: inputSchemas.workspace_overview,
       },
       async ({ org_id }) => {
         try {
@@ -82,9 +78,7 @@ defineTool({
       'open_comments',
       {
         description: 'Aggregated unresolved comments across all files in a project. Checks up to 20 files.',
-        inputSchema: {
-          project_id: figmaId.describe('Project ID'),
-        },
+        inputSchema: inputSchemas.open_comments,
       },
       async ({ project_id }) => {
         try {
@@ -116,11 +110,7 @@ defineTool({
       'cleanup_stale_files',
       {
         description: 'Find files not modified in N days and optionally trash them. dry_run=true (default) previews which files would be trashed without trashing them. Set dry_run=false to execute.',
-        inputSchema: {
-          project_id: figmaId.describe('Project ID'),
-          days_stale: z.number().optional().default(90).describe('Days since last modification (default: 90)'),
-          dry_run: z.boolean().optional().default(true).describe('Preview only, no deletion (default: true)'),
-        },
+        inputSchema: inputSchemas.cleanup_stale_files,
       },
       async ({ project_id, days_stale, dry_run: rawDryRun }) => {
         try {
@@ -151,10 +141,7 @@ defineTool({
       'organize_project',
       {
         description: 'Move files into a target project in a single batch. Files are moved (not copied) from their current project.',
-        inputSchema: {
-          file_keys: z.array(figmaId).min(1).describe('File keys to move'),
-          target_project_id: figmaId.describe('Destination project ID'),
-        },
+        inputSchema: inputSchemas.organize_project,
       },
       async ({ file_keys, target_project_id }) => {
         try {
@@ -179,13 +166,7 @@ defineTool({
       'setup_project_structure',
       {
         description: 'Create multiple projects in a team from a plan. Optionally set descriptions.',
-        inputSchema: {
-          team_id: figmaId.describe('Team ID'),
-          projects: z.array(z.object({
-            name: z.string().describe('Project name'),
-            description: z.string().optional().describe('Project description'),
-          })).min(1).describe('Projects to create'),
-        },
+        inputSchema: inputSchemas.setup_project_structure,
       },
       async ({ team_id, projects }) => {
         try {
@@ -210,11 +191,7 @@ defineTool({
       'seat_optimization',
       {
         description: 'Identify inactive paid seats and calculate potential savings. Fetches members, seat counts, and pricing to find optimization opportunities.',
-        inputSchema: {
-          org_id: figmaId.optional().describe('Org ID override (defaults to current workspace)'),
-          days_inactive: z.number().min(1).max(365).optional().default(90).describe('Days without activity to flag as inactive (default: 90)'),
-          include_cost: z.boolean().optional().default(true).describe('Include cost analysis from contract rates (default: true)'),
-        },
+        inputSchema: inputSchemas.seat_optimization,
       },
       async ({ org_id, days_inactive, include_cost }) => {
         try {
@@ -246,12 +223,7 @@ defineTool({
       'permission_audit',
       {
         description: 'Audit permissions across a team or project. Scans files for external editors, open link access, and elevated individual permissions.',
-        inputSchema: {
-          scope_type: z.enum(['project', 'team']).describe('Scope to audit'),
-          scope_id: figmaId.describe('Team ID or project ID'),
-          flag_external: z.boolean().optional().default(true).describe('Flag external users (default: true)'),
-          org_id: figmaId.optional().describe('Org ID override (defaults to current workspace)'),
-        },
+        inputSchema: inputSchemas.permission_audit,
       },
       async ({ scope_type, scope_id, flag_external, org_id }) => {
         try {
@@ -287,11 +259,7 @@ defineTool({
       'branch_cleanup',
       {
         description: 'Find stale branches across a project and optionally archive them. dry_run=true (default) previews which branches would be archived. Archives move branch files to trash (recoverable).',
-        inputSchema: {
-          project_id: figmaId.describe('Project ID'),
-          days_stale: z.number().min(1).max(365).optional().default(60).describe('Days since last modification to flag as stale (default: 60)'),
-          dry_run: z.boolean().optional().default(true).describe('Preview only, no archiving (default: true)'),
-        },
+        inputSchema: inputSchemas.branch_cleanup,
       },
       async ({ project_id, days_stale, dry_run: rawDryRun }) => {
         try {

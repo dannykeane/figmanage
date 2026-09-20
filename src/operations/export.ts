@@ -1,3 +1,4 @@
+import { validateInput } from '../validation.js';
 import type { AuthConfig } from '../auth/client.js';
 import { publicClient } from '../clients/public-api.js';
 
@@ -15,6 +16,7 @@ export async function exportNodes(
   config: AuthConfig,
   params: { file_key: string; node_ids: string[]; format?: string; scale?: number },
 ): Promise<ExportedImage[]> {
+  validateInput('export_nodes', params);
   const queryParams: Record<string, string> = {
     ids: params.node_ids.join(','),
     format: params.format || 'png',
@@ -37,6 +39,7 @@ export async function getImageFills(
   config: AuthConfig,
   params: { file_key: string },
 ): Promise<ImageFill[]> {
+  validateInput('get_image_fills', params);
   const res = await publicClient(config).get(`/v1/files/${params.file_key}/images`);
   const images = res.data?.meta?.images || res.data?.images || {};
   return Object.entries(images).map(([ref, url]) => ({

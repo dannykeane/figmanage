@@ -1,23 +1,23 @@
 import { Command } from 'commander';
 import {
-  fileSummary,
-  workspaceOverview,
-  openComments,
-  cleanupStaleFiles,
-  organizeProject,
-  setupProjectStructure,
-  seatOptimization,
-  permissionAudit,
-  branchCleanup,
-} from '../operations/compound.js';
-import {
   offboardUser,
   onboardUser,
   quarterlyDesignOpsReport,
 } from '../operations/compound-manager.js';
-import { output, error } from './format.js';
-import { formatApiError } from '../helpers.js';
-import { requireAuth, requirePat, requireCookie, validateId, parsePositiveInt } from './helpers.js';
+import {
+  branchCleanup,
+  cleanupStaleFiles,
+  fileSummary,
+  openComments,
+  organizeProject,
+  permissionAudit,
+  seatOptimization,
+  setupProjectStructure,
+  workspaceOverview,
+} from '../operations/compound.js';
+import { error, fail, output } from './format.js';
+import { parsePositiveInt, requireAuth, requireCookie, requirePat, validateId } from './helpers.js';
+import { executionOptions } from '../execution.js';
 
 // -- compound.ts tools --
 
@@ -33,8 +33,7 @@ export function fileSummaryCommand(): Command {
         const result = await fileSummary(config, { file_key: fileKey });
         output(result, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 }
@@ -49,8 +48,7 @@ export function workspaceOverviewCommand(): Command {
         const result = await workspaceOverview(config, {});
         output(result, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 }
@@ -67,8 +65,7 @@ export function openCommentsCommand(): Command {
         const result = await openComments(config, { project_id: projectId });
         output(result, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 }
@@ -96,8 +93,7 @@ export function cleanupStaleFilesCommand(): Command {
         });
         output(result, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 }
@@ -123,8 +119,7 @@ export function organizeProjectCommand(): Command {
         });
         output(result, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 }
@@ -156,8 +151,7 @@ export function setupProjectStructureCommand(): Command {
         const result = await setupProjectStructure(config, { team_id: teamId, projects });
         output(result, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 }
@@ -182,8 +176,7 @@ export function seatOptimizationCommand(): Command {
         });
         output(result, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 }
@@ -214,8 +207,7 @@ export function permissionAuditCommand(): Command {
         });
         output(result, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 }
@@ -243,8 +235,7 @@ export function branchCleanupCommand(): Command {
         });
         output(result, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 }
@@ -258,25 +249,27 @@ export function offboardUserCommand(): Command {
     .option('--execute', 'Execute the offboarding (default: audit only)')
     .option('--transfer-to <user>', 'Email or user_id to transfer file ownership to')
     .option('--remove-from-org', 'Permanently remove from org after offboarding (cannot be undone)')
+    .option('--progress', 'Emit live progress records (requires --jsonl)')
     .option('--json', 'Force JSON output')
     .action(async (user: string, options: {
       execute?: boolean;
       transferTo?: string;
       removeFromOrg?: boolean;
+      progress?: boolean;
       json?: boolean;
     }) => {
       try {
+        if (options.progress && !executionOptions.jsonl) throw new Error('--progress requires --jsonl.');
         const config = requireCookie();
         const result = await offboardUser(config, {
           user_identifier: user,
           execute: options.execute === true,
           transfer_to: options.transferTo,
           remove_from_org: options.removeFromOrg === true,
-        });
+        }, options.progress ? event => { console.log(JSON.stringify({ type: 'progress', data: event })); } : undefined);
         output(result, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 }
@@ -315,8 +308,7 @@ export function onboardUserCommand(): Command {
         });
         output(result, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 }
@@ -336,8 +328,7 @@ export function quarterlyReportCommand(): Command {
         const result = await quarterlyDesignOpsReport(config, { days });
         output(result, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 }

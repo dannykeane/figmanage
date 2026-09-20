@@ -1,7 +1,6 @@
 import { Command } from 'commander';
-import { createTeam, renameTeam, deleteTeam, addTeamMember, removeTeamMember } from '../operations/teams.js';
-import { output, error } from './format.js';
-import { formatApiError } from '../helpers.js';
+import { addTeamMember, createTeam, deleteTeam, removeTeamMember, renameTeam } from '../operations/teams.js';
+import { fail, output } from './format.js';
 import { requireCookie } from './helpers.js';
 
 export function teamsCommand(): Command {
@@ -19,8 +18,7 @@ export function teamsCommand(): Command {
         const result = await createTeam(config, { name, org_id: options.orgId });
         output(result, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -34,8 +32,7 @@ export function teamsCommand(): Command {
         const msg = await renameTeam(config, { team_id: teamId, name });
         output({ message: msg }, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -48,14 +45,12 @@ export function teamsCommand(): Command {
         const config = requireCookie();
         const { confirmAction } = await import('./helpers.js');
         if (!await confirmAction(`Permanently delete team ${teamId}? All projects and files will be lost.`)) {
-          console.log('Cancelled.');
-          return;
+          throw new Error('Cancelled. No changes made.');
         }
         const msg = await deleteTeam(config, { team_id: teamId });
         output({ message: msg }, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -70,12 +65,11 @@ export function teamsCommand(): Command {
         const msg = await addTeamMember(config, {
           team_id: teamId,
           email,
-          level: options.level ? parseInt(options.level, 10) : undefined,
+          level: options.level ? Number(options.level) : undefined,
         });
         output({ message: msg }, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -88,14 +82,12 @@ export function teamsCommand(): Command {
         const config = requireCookie();
         const { confirmAction } = await import('./helpers.js');
         if (!await confirmAction(`Remove user ${userId} from team ${teamId}?`)) {
-          console.log('Cancelled.');
-          return;
+          throw new Error('Cancelled. No changes made.');
         }
         const msg = await removeTeamMember(config, { team_id: teamId, user_id: userId });
         output({ message: msg }, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 

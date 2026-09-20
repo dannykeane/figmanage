@@ -1,7 +1,6 @@
 import { Command } from 'commander';
 import { exportNodes, getImageFills } from '../operations/export.js';
-import { output, error } from './format.js';
-import { formatApiError } from '../helpers.js';
+import { fail, output, outputEmpty } from './format.js';
 import { requirePat } from './helpers.js';
 
 export function exportCommand(): Command {
@@ -25,12 +24,11 @@ export function exportCommand(): Command {
           file_key: fileKey,
           node_ids: nodeIds,
           format: options.format,
-          scale: options.scale ? parseFloat(options.scale) : undefined,
+          scale: options.scale ? Number(options.scale) : undefined,
         });
         output(result, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -43,13 +41,12 @@ export function exportCommand(): Command {
         const config = requirePat();
         const result = await getImageFills(config, { file_key: fileKey });
         if (result.length === 0) {
-          console.log('No image fills in this file.');
+          outputEmpty(result, 'No image fills in this file.', options);
           return;
         }
         output(result, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 

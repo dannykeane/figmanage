@@ -1,6 +1,8 @@
+import { validateInput } from '../validation.js';
 import type { AuthConfig, OrgEntry } from '../auth/client.js';
 import { hasCookie, hasPat } from '../auth/client.js';
 import { publicClient } from '../clients/public-api.js';
+import { publicFolderFiles, publicTeamFolders } from '../clients/folders.js';
 import { internalClient } from '../clients/internal-api.js';
 import { checkAuth, formatAuthStatus } from '../auth/health.js';
 import type { AuthStatus } from '../types/figma.js';
@@ -44,6 +46,8 @@ export interface FileListResult {
   pagination?: {
     has_more: boolean;
     hint: string;
+    next_cursor?: string;
+    cursor_source?: 'offset' | 'server' | 'inferred';
   };
 }
 
@@ -96,13 +100,20 @@ function requireOrgId(config: AuthConfig, explicit?: string): string {
  * Check if the current user is an org admin.
  * Returns false on any error (no org, 403, network) -- safe default.
  */
-export async function checkIsAdmin(config: AuthConfig): Promise<boolean> {
+export async function checkIsAdmin(config: AuthConfig, options: { timeoutMs?: number } = {}): Promise<boolean> {
   const orgId = config.orgId || process.env.FIGMA_ORG_ID;
   if (!orgId || !config.cookie) return false;
   try {
     const res = await internalClient(config).get(
       `/api/orgs/${orgId}/admins`,
-      { params: { include_license_admins: false } },
+      {
+        params: { include_license_admins: false },
+        ...(options.timeoutMs === undefined ? {} : {
+          timeout: options.timeoutMs,
+          signal: AbortSignal.timeout(options.timeoutMs),
+          'axios-retry': { retries: 0 },
+        }),
+      },
     );
     const admins: Array<{ user_id?: string; user?: { id: string } }> = res.data?.meta?.admins || res.data?.meta || [];
     return admins.some(a => (a.user_id || a.user?.id) === config.userId);
@@ -112,6 +123,7 @@ export async function checkIsAdmin(config: AuthConfig): Promise<boolean> {
 }
 
 export async function checkAuthStatus(config: AuthConfig): Promise<AuthCheckResult> {
+  validateInput('check_auth', {});
   const status = await checkAuth(config);
   if (config.isAdmin === undefined && config.cookie) {
     config.isAdmin = await checkIsAdmin(config);
@@ -121,6 +133,7 @@ export async function checkAuthStatus(config: AuthConfig): Promise<AuthCheckResu
 }
 
 export async function listOrgs(config: AuthConfig): Promise<OrgListEntry[]> {
+  validateInput('list_orgs', {});
   const api = internalClient(config);
   const res = await api.get('/api/user/state');
   let orgs: OrgEntry[] = (res.data?.meta?.orgs || [])
@@ -187,6 +200,7 @@ export async function switchOrg(
   config: AuthConfig,
   params: { org: string },
 ): Promise<SwitchOrgResult> {
+  validateInput('switch_org', params);
   // Ensure we have an org list
   if (!config.orgs || config.orgs.length === 0) {
     const res = await internalClient(config).get('/api/user/state');
@@ -232,6 +246,7 @@ export async function switchOrg(
 }
 
 export async function listTeams(config: AuthConfig): Promise<Team[]> {
+  validateInput('list_teams', {});
   if (config.orgId) {
     const res = await internalClient(config).get(`/api/orgs/${config.orgId}/teams`);
     const data = res.data?.meta || res.data;
@@ -252,6 +267,7 @@ export async function listProjects(
   config: AuthConfig,
   params: { team_id: string },
 ): Promise<Project[]> {
+  validateInput('list_projects', params);
   if (hasCookie(config)) {
     const res = await internalClient(config).get(`/api/teams/${params.team_id}/folders`);
     const rows = res.data?.meta?.folder_rows || res.data || [];
@@ -260,8 +276,8 @@ export async function listProjects(
       name: p.name || p.path,
     }));
   } else {
-    const res = await publicClient(config).get(`/v1/teams/${params.team_id}/projects`);
-    return (res.data.projects || []).map((p: any) => ({
+    const folders = await publicTeamFolders(config, params.team_id);
+    return folders.map(p => ({
       id: String(p.id),
       name: p.name,
     }));
@@ -272,17 +288,26 @@ export async function listFiles(
   config: AuthConfig,
   params: { project_id: string; page_size?: number; page_token?: string },
 ): Promise<FileListResult> {
+  validateInput('list_files', params);
   // Prefer public API when PAT available -- returns keys compatible
   // with all public endpoints (versions, comments, export).
   if (hasPat(config)) {
-    const res = await publicClient(config).get(`/v1/projects/${params.project_id}/files`);
-    const files = (res.data.files || []).map((f: any) => ({
+    const rows = await publicFolderFiles(config, params.project_id);
+    const files = rows.map(f => ({
       key: f.key,
       name: f.name,
       last_modified: f.last_modified,
       thumbnail_url: f.thumbnail_url,
     }));
-    return { files };
+    if (params.page_size === undefined && params.page_token === undefined) return { files };
+    if (params.page_token && !/^offset:\d+$/.test(params.page_token)) throw new Error('Invalid page token for PAT access. Use the next_cursor from list_files.');
+    const offset = Number(params.page_token?.slice(7) || 0);
+    if (!Number.isSafeInteger(offset)) throw new Error('Invalid page token offset.');
+    const size = params.page_size ?? 25;
+    const page = files.slice(offset, offset + size);
+    const hasMore = offset + size < files.length;
+    const next = hasMore ? `offset:${offset + size}` : undefined;
+    return { files: page, pagination: { has_more: hasMore, next_cursor: next, cursor_source: 'offset', hint: next ? `Call list_files with page_token="${next}"` : 'No more files.' } };
   } else {
     const pageSize = Math.min(params.page_size || 25, 100);
     const urlParams = new URLSearchParams({
@@ -305,11 +330,13 @@ export async function listFiles(
       editor_type: f.editor_type,
     }));
 
-    const pagination = res.data?.pagination;
+    const pagination = res.data?.pagination || meta.pagination;
     const result: FileListResult = { files };
     if (pagination?.next_page || files.length === pageSize) {
       result.pagination = {
         has_more: true,
+        next_cursor: pagination?.next_page || files[files.length - 1]?.last_modified || undefined,
+        cursor_source: pagination?.next_page ? 'server' : 'inferred',
         hint: `To get the next page, call list_files again with page_token="${pagination?.next_page || files[files.length - 1]?.last_modified || ''}"`,
       };
     }
@@ -318,6 +345,7 @@ export async function listFiles(
 }
 
 export async function listRecentFiles(config: AuthConfig): Promise<RecentFile[]> {
+  validateInput('list_recent_files', {});
   const res = await internalClient(config).get('/api/recent_files');
   return (res.data?.meta?.recent_files || []).map((f: any) => ({
     key: f.key,
@@ -334,6 +362,7 @@ export async function search(
   config: AuthConfig,
   params: { query: string; sort?: string; org_id?: string },
 ): Promise<SearchResult[]> {
+  validateInput('search', params);
   const orgId = requireOrgId(config, params.org_id);
 
   const apiParams: Record<string, string> = {
@@ -370,6 +399,7 @@ export async function getFileInfo(
   config: AuthConfig,
   params: { file_key: string },
 ): Promise<FileInfo> {
+  validateInput('get_file_info', params);
   if (hasPat(config)) {
     const res = await publicClient(config).get(`/v1/files/${params.file_key}/meta`);
     const f = res.data.file || res.data;
@@ -397,6 +427,7 @@ export async function getFileInfo(
 }
 
 export async function listFavorites(config: AuthConfig): Promise<Favorite[]> {
+  validateInput('list_favorites', {});
   const res = await internalClient(config).get('/api/user/favorited_resources');
   const data = res.data?.meta || res.data;
   return (Array.isArray(data) ? data : data.favorites || data.resources || []).map((f: any) => ({

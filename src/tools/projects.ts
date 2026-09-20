@@ -1,16 +1,16 @@
-import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { AuthConfig } from '../auth/client.js';
-import { defineTool, toolResult, toolError, toolSummary, figmaId } from './register.js';
 import { formatApiError } from '../helpers.js';
 import {
   createProject,
-  renameProject,
   moveProject,
-  trashProject,
+  renameProject,
   restoreProject,
   setProjectDescription,
+  trashProject,
 } from '../operations/projects.js';
+import { inputSchemas } from '../schemas.js';
+import { defineTool, toolError, toolResult, toolSummary } from './register.js';
 
 // -- create_project --
 
@@ -23,10 +23,7 @@ defineTool({
       'create_project',
       {
         description: 'Create a new project (folder) in a team.',
-        inputSchema: {
-          team_id: figmaId.describe('Team ID to create the project in'),
-          name: z.string().describe('Project name'),
-        },
+        inputSchema: inputSchemas.create_project,
       },
       async ({ team_id, name }) => {
         try {
@@ -51,10 +48,7 @@ defineTool({
       'rename_project',
       {
         description: 'Rename a project (folder).',
-        inputSchema: {
-          project_id: figmaId.describe('Project ID'),
-          name: z.string().describe('New name'),
-        },
+        inputSchema: inputSchemas.rename_project,
       },
       async ({ project_id, name }) => {
         try {
@@ -79,10 +73,7 @@ defineTool({
       'move_project',
       {
         description: 'Move a project to a different team.',
-        inputSchema: {
-          project_id: figmaId.describe('Project ID to move'),
-          destination_team_id: figmaId.describe('Destination team ID'),
-        },
+        inputSchema: inputSchemas.move_project,
       },
       async ({ project_id, destination_team_id }) => {
         try {
@@ -108,9 +99,7 @@ defineTool({
       'trash_project',
       {
         description: 'Move a project and all its files to trash. Recoverable via restore_project.',
-        inputSchema: {
-          project_id: figmaId.describe('Project ID to trash'),
-        },
+        inputSchema: inputSchemas.trash_project,
       },
       async ({ project_id }) => {
         try {
@@ -135,9 +124,7 @@ defineTool({
       'restore_project',
       {
         description: 'Restore a project from trash.',
-        inputSchema: {
-          project_id: figmaId.describe('Project ID to restore'),
-        },
+        inputSchema: inputSchemas.restore_project,
       },
       async ({ project_id }) => {
         try {
@@ -162,10 +149,7 @@ defineTool({
       'set_project_description',
       {
         description: 'Set or update a project description.',
-        inputSchema: {
-          project_id: figmaId.describe('Project ID'),
-          description: z.string().describe('New description text'),
-        },
+        inputSchema: inputSchemas.set_project_description,
       },
       async ({ project_id, description }) => {
         try {

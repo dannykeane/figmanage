@@ -1,3 +1,4 @@
+import { validateInput } from '../validation.js';
 import type { AuthConfig } from '../auth/client.js';
 import { internalClient } from '../clients/internal-api.js';
 import { requireOrgId } from '../helpers.js';
@@ -11,6 +12,7 @@ export async function createTeam(
   config: AuthConfig,
   params: { name: string; org_id?: string },
 ): Promise<CreatedTeam> {
+  validateInput('create_team', params);
   const orgId = requireOrgId(config, params.org_id);
   const res = await internalClient(config).post(
     '/api/teams/create',
@@ -24,6 +26,7 @@ export async function renameTeam(
   config: AuthConfig,
   params: { team_id: string; name: string },
 ): Promise<string> {
+  validateInput('rename_team', params);
   await internalClient(config).put(`/api/teams/${params.team_id}`, { name: params.name });
   return `Team ${params.team_id} renamed to "${params.name}".`;
 }
@@ -32,6 +35,7 @@ export async function addTeamMember(
   config: AuthConfig,
   params: { team_id: string; email: string; level?: number },
 ): Promise<string> {
+  validateInput('add_team_member', params);
   await internalClient(config).post('/api/invites', {
     emails: [params.email],
     resource_type: 'team',
@@ -46,6 +50,7 @@ export async function removeTeamMember(
   config: AuthConfig,
   params: { team_id: string; user_id: string },
 ): Promise<string> {
+  validateInput('remove_team_member', params);
   const res = await internalClient(config).get(`/api/teams/${params.team_id}/members`);
   const members = res.data?.meta || res.data || [];
   const list = Array.isArray(members) ? members : [];
@@ -65,6 +70,7 @@ export async function deleteTeam(
   config: AuthConfig,
   params: { team_id: string },
 ): Promise<string> {
+  validateInput('delete_team', params);
   await internalClient(config).delete(`/api/teams/${params.team_id}`);
   return `Team ${params.team_id} deleted.`;
 }

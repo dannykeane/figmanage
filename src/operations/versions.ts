@@ -1,3 +1,4 @@
+import { validateInput } from '../validation.js';
 import type { AuthConfig } from '../auth/client.js';
 import { publicClient } from '../clients/public-api.js';
 import { internalClient } from '../clients/internal-api.js';
@@ -24,6 +25,7 @@ export async function listVersions(
   config: AuthConfig,
   params: { file_key: string },
 ): Promise<Version[]> {
+  validateInput('list_versions', params);
   const res = await publicClient(config).get(`/v1/files/${params.file_key}/versions`);
   const versions = res.data?.versions || [];
   return versions.map((v: any) => ({
@@ -39,6 +41,7 @@ export async function createVersion(
   config: AuthConfig,
   params: { file_key: string; title: string; description?: string },
 ): Promise<CreatedVersion> {
+  validateInput('create_version', params);
   const res = await internalClient(config).post(`/api/multiplayer/${params.file_key}/create_savepoint`, {
     label: params.title,
     description: params.description || '',

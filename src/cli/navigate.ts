@@ -1,18 +1,18 @@
 import { Command } from 'commander';
+import { readConfig, writeConfig } from '../config.js';
 import {
   checkAuthStatus,
-  listOrgs,
-  switchOrg,
-  listTeams,
-  listProjects,
-  listFiles,
-  listRecentFiles,
-  search,
   getFileInfo,
   listFavorites,
+  listFiles,
+  listOrgs,
+  listProjects,
+  listRecentFiles,
+  listTeams,
+  search,
+  switchOrg,
 } from '../operations/navigate.js';
-import { output, error } from './format.js';
-import { formatApiError } from '../helpers.js';
+import { fail, isMachineOutput, output, outputEmpty } from './format.js';
 import { requireAuth, requireCookie } from './helpers.js';
 
 export function navigateCommand(): Command {
@@ -27,14 +27,14 @@ export function navigateCommand(): Command {
       try {
         const config = requireAuth();
         const result = await checkAuthStatus(config);
-        if (options.json) {
+        if (!result.status.pat.valid && !result.status.cookie.valid) process.exitCode = 1;
+        if (isMachineOutput(options)) {
           output(result.status, options);
         } else {
           console.log(result.formatted);
         }
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -47,13 +47,12 @@ export function navigateCommand(): Command {
         const config = requireCookie();
         const orgs = await listOrgs(config);
         if (orgs.length === 0) {
-          console.log('No workspaces found. You may be on a free/starter plan.');
+          outputEmpty(orgs, 'No workspaces found. You may be on a free/starter plan.', options);
           return;
         }
         output(orgs, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -65,13 +64,21 @@ export function navigateCommand(): Command {
       try {
         const config = requireCookie();
         const result = await switchOrg(config, { org });
+        if (process.env.FIGMA_ORG_ID && process.env.FIGMA_ORG_ID !== result.current.id) {
+          throw new Error('FIGMA_ORG_ID overrides saved workspace selection. Change or unset it before switching.');
+        }
+        const saved = readConfig();
+        if (!saved || !saved.workspaces[saved.active_workspace]) {
+          throw new Error('No saved workspace to update. Set FIGMA_ORG_ID for environment-only authentication.');
+        }
+        saved.workspaces[saved.active_workspace].org_id = result.current.id;
+        writeConfig(saved);
         output({
           previous: result.previous,
           current: result.current,
         }, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -85,8 +92,7 @@ export function navigateCommand(): Command {
         const teams = await listTeams(config);
         output(teams, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -100,8 +106,7 @@ export function navigateCommand(): Command {
         const projects = await listProjects(config, { team_id: teamId });
         output(projects, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -120,13 +125,12 @@ export function navigateCommand(): Command {
         const config = requireAuth();
         const result = await listFiles(config, {
           project_id: projectId,
-          page_size: options.pageSize ? parseInt(options.pageSize, 10) : undefined,
+          page_size: options.pageSize ? Number(options.pageSize) : undefined,
           page_token: options.pageToken,
         });
-        output(result, options);
+        output(result, { ...options, collection: 'files' });
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -140,8 +144,7 @@ export function navigateCommand(): Command {
         const files = await listRecentFiles(config);
         output(files, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -164,13 +167,12 @@ export function navigateCommand(): Command {
           org_id: options.orgId,
         });
         if (results.length === 0) {
-          console.log('No results found.');
+          outputEmpty(results, 'No results found.', options);
           return;
         }
         output(results, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -184,8 +186,7 @@ export function navigateCommand(): Command {
         const info = await getFileInfo(config, { file_key: fileKey });
         output(info, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -198,13 +199,12 @@ export function navigateCommand(): Command {
         const config = requireCookie();
         const favorites = await listFavorites(config);
         if (favorites.length === 0) {
-          console.log('No favorites found.');
+          outputEmpty(favorites, 'No favorites found.', options);
           return;
         }
         output(favorites, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 

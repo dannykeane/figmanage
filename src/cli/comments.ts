@@ -1,18 +1,17 @@
 import { Command } from 'commander';
 import {
-  listComments,
-  formatCommentsAsMarkdown,
-  postComment,
-  deleteComment,
-  resolveComment,
-  editComment,
   addCommentReaction,
-  removeCommentReaction,
+  deleteComment,
+  editComment,
+  formatCommentsAsMarkdown,
   listCommentReactions,
+  listComments,
+  postComment,
+  removeCommentReaction,
+  resolveComment,
 } from '../operations/comments.js';
-import { output, error } from './format.js';
-import { formatApiError } from '../helpers.js';
-import { requirePat, requireCookie } from './helpers.js';
+import { fail, output } from './format.js';
+import { requireCookie, requirePat } from './helpers.js';
 
 export function commentsCommand(): Command {
   const comments = new Command('comments')
@@ -33,8 +32,7 @@ export function commentsCommand(): Command {
         }
         output(result, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -61,8 +59,7 @@ export function commentsCommand(): Command {
         });
         output(result, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -75,14 +72,12 @@ export function commentsCommand(): Command {
         const config = requirePat();
         const { confirmAction } = await import('./helpers.js');
         if (!await confirmAction(`Delete comment ${commentId}? For top-level comments, the entire thread is removed.`)) {
-          console.log('Cancelled.');
-          return;
+          throw new Error('Cancelled. No changes made.');
         }
         await deleteComment(config, { file_key: fileKey, comment_id: commentId });
         output({ deleted: commentId }, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -99,8 +94,7 @@ export function commentsCommand(): Command {
         });
         output(result, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -122,8 +116,7 @@ export function commentsCommand(): Command {
         });
         output({ message: msg }, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -141,8 +134,7 @@ export function commentsCommand(): Command {
         });
         output({ message: msg }, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -160,8 +152,7 @@ export function commentsCommand(): Command {
         });
         output(result, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -179,8 +170,7 @@ export function commentsCommand(): Command {
         });
         output({ removed: emoji, comment_id: commentId }, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 

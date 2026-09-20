@@ -1,9 +1,9 @@
-import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { AuthConfig } from '../auth/client.js';
-import { defineTool, toolResult, toolError, toolSummary, figmaId } from './register.js';
 import { formatApiError } from '../helpers.js';
-import { listBranches, createBranch, deleteBranch } from '../operations/branching.js';
+import { createBranch, deleteBranch, listBranches } from '../operations/branching.js';
+import { inputSchemas } from '../schemas.js';
+import { defineTool, toolError, toolResult, toolSummary } from './register.js';
 
 // -- list_branches --
 
@@ -15,14 +15,12 @@ defineTool({
       'list_branches',
       {
         description: 'List branches of a file.',
-        inputSchema: {
-          file_key: figmaId.describe('File key of the main file'),
-        },
+        inputSchema: inputSchemas.list_branches,
       },
       async ({ file_key }) => {
         try {
           const result = await listBranches(config, { file_key });
-          if (result.length === 0) return toolResult('No branches found.');
+          if (result.length === 0) return toolResult('No branches found.', result);
           return toolSummary(`${result.length} branch(es).`, result, 'Use create_branch to add a branch, or delete_branch to archive one.');
         } catch (e: any) {
           return toolError(`Failed to list branches: ${formatApiError(e)}`);
@@ -43,10 +41,7 @@ defineTool({
       'create_branch',
       {
         description: 'Create a branch from a file.',
-        inputSchema: {
-          file_key: figmaId.describe('File key to branch from'),
-          name: z.string().describe('Branch name'),
-        },
+        inputSchema: inputSchemas.create_branch,
       },
       async ({ file_key, name }) => {
         try {
@@ -73,9 +68,7 @@ defineTool({
       'delete_branch',
       {
         description: 'Archive (delete) a branch. Uses the branch file key from list_branches.',
-        inputSchema: {
-          branch_key: figmaId.describe('Branch file key (from list_branches)'),
-        },
+        inputSchema: inputSchemas.delete_branch,
       },
       async ({ branch_key }) => {
         try {

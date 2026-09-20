@@ -1,24 +1,17 @@
-import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { AuthConfig } from '../auth/client.js';
-import { defineTool, toolResult, toolError, toolSummary, figmaId } from './register.js';
 import { formatApiError } from '../helpers.js';
 import {
-  listWebhooks,
   createWebhook,
-  updateWebhook,
   deleteWebhook,
+  listWebhooks,
+  updateWebhook,
   webhookRequests,
 } from '../operations/webhooks.js';
+import { inputSchemas } from '../schemas.js';
+import { defineTool, toolError, toolResult, toolSummary } from './register.js';
 
-const eventTypeEnum = z.enum([
-  'FILE_UPDATE',
-  'FILE_DELETE',
-  'FILE_VERSION_UPDATE',
-  'LIBRARY_PUBLISH',
-  'FILE_COMMENT',
-  'PING',
-]);
+
 
 // -- list_webhooks --
 
@@ -30,14 +23,12 @@ defineTool({
       'list_webhooks',
       {
         description: 'List webhook subscriptions for a team. Returns webhook IDs, endpoints, event types, and status.',
-        inputSchema: {
-          team_id: figmaId.describe('Team ID'),
-        },
+        inputSchema: inputSchemas.list_webhooks,
       },
       async ({ team_id }) => {
         try {
           const result = await listWebhooks(config, { team_id });
-          if (result.count === 0) return toolResult('No webhooks configured for this team.');
+          if (result.count === 0) return toolResult('No webhooks configured for this team.', result);
           return toolSummary(`${result.count} webhook(s).`, result, 'Use webhook_requests to check delivery history, create_webhook to add, or update_webhook/delete_webhook to manage.');
         } catch (e: any) {
           return toolError(`Failed to list webhooks: ${formatApiError(e)}`);
@@ -58,13 +49,7 @@ defineTool({
       'create_webhook',
       {
         description: 'Create a webhook subscription for a team.',
-        inputSchema: {
-          team_id: figmaId.describe('Team ID'),
-          event_type: eventTypeEnum.describe('Event type to subscribe to'),
-          endpoint: z.string().describe('URL to receive webhook payloads'),
-          passcode: z.string().describe('Secret for signature verification'),
-          description: z.string().optional().describe('Webhook description'),
-        },
+        inputSchema: inputSchemas.create_webhook,
       },
       async ({ team_id, event_type, endpoint, passcode, description }) => {
         try {
@@ -89,14 +74,7 @@ defineTool({
       'update_webhook',
       {
         description: "Update a webhook's endpoint, event type, passcode, description, or status (ACTIVE/PAUSED).",
-        inputSchema: {
-          webhook_id: figmaId.describe('Webhook ID'),
-          event_type: eventTypeEnum.optional().describe('Event type to subscribe to'),
-          endpoint: z.string().optional().describe('URL to receive webhook payloads'),
-          passcode: z.string().optional().describe('Secret for signature verification'),
-          description: z.string().optional().describe('Webhook description'),
-          status: z.enum(['ACTIVE', 'PAUSED']).optional().describe('Webhook status'),
-        },
+        inputSchema: inputSchemas.update_webhook,
       },
       async ({ webhook_id, event_type, endpoint, passcode, description, status }) => {
         try {
@@ -120,14 +98,12 @@ defineTool({
       'webhook_requests',
       {
         description: 'List recent webhook delivery attempts (last 7 days). Shows payload, response status, and errors.',
-        inputSchema: {
-          webhook_id: figmaId.describe('Webhook ID'),
-        },
+        inputSchema: inputSchemas.webhook_requests,
       },
       async ({ webhook_id }) => {
         try {
           const result = await webhookRequests(config, { webhook_id });
-          if (result.count === 0) return toolResult('No webhook deliveries in the last 7 days.');
+          if (result.count === 0) return toolResult('No webhook deliveries in the last 7 days.', result);
           return toolSummary(`${result.count} delivery attempt(s).`, result, 'Use update_webhook to fix failing endpoints.');
         } catch (e: any) {
           return toolError(`Failed to list webhook requests: ${formatApiError(e)}`);
@@ -149,9 +125,7 @@ defineTool({
       'delete_webhook',
       {
         description: 'Permanently delete a webhook. The webhook stops receiving events immediately. Cannot be undone.',
-        inputSchema: {
-          webhook_id: figmaId.describe('Webhook ID'),
-        },
+        inputSchema: inputSchemas.delete_webhook,
       },
       async ({ webhook_id }) => {
         try {

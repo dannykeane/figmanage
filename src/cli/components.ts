@@ -6,12 +6,11 @@ import {
   listTeamStyles,
 } from '../operations/components.js';
 import {
-  listDevResources,
   createDevResource,
   deleteDevResource,
+  listDevResources,
 } from '../operations/dev-resources.js';
-import { output, error } from './format.js';
-import { formatApiError } from '../helpers.js';
+import { fail, output, outputEmpty } from './format.js';
 import { requirePat } from './helpers.js';
 
 export function componentsCommand(): Command {
@@ -27,13 +26,12 @@ export function componentsCommand(): Command {
         const config = requirePat();
         const result = await listFileComponents(config, { file_key: fileKey });
         if (result.components.length === 0) {
-          console.log('No components found.');
+          outputEmpty(result, 'No components found.', { ...options, collection: 'components' });
           return;
         }
-        output(result, options);
+        output(result, { ...options, collection: 'components' });
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -46,13 +44,12 @@ export function componentsCommand(): Command {
         const config = requirePat();
         const result = await listFileStyles(config, { file_key: fileKey });
         if (result.styles.length === 0) {
-          console.log('No styles found.');
+          outputEmpty(result, 'No styles found.', { ...options, collection: 'styles' });
           return;
         }
-        output(result, options);
+        output(result, { ...options, collection: 'styles' });
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -71,17 +68,16 @@ export function componentsCommand(): Command {
         const config = requirePat();
         const result = await listTeamComponents(config, {
           team_id: teamId,
-          page_size: options.pageSize ? parseInt(options.pageSize, 10) : undefined,
+          page_size: options.pageSize ? Number(options.pageSize) : undefined,
           cursor: options.cursor,
         });
         if (result.components.length === 0) {
-          console.log('No components found.');
+          outputEmpty(result, 'No components found.', { ...options, collection: 'components' });
           return;
         }
-        output(result, options);
+        output(result, { ...options, collection: 'components' });
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -100,17 +96,16 @@ export function componentsCommand(): Command {
         const config = requirePat();
         const result = await listTeamStyles(config, {
           team_id: teamId,
-          page_size: options.pageSize ? parseInt(options.pageSize, 10) : undefined,
+          page_size: options.pageSize ? Number(options.pageSize) : undefined,
           cursor: options.cursor,
         });
         if (result.styles.length === 0) {
-          console.log('No styles found.');
+          outputEmpty(result, 'No styles found.', { ...options, collection: 'styles' });
           return;
         }
-        output(result, options);
+        output(result, { ...options, collection: 'styles' });
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -127,13 +122,12 @@ export function componentsCommand(): Command {
           node_ids: options.nodeIds?.split(','),
         });
         if (result.length === 0) {
-          console.log('No dev resources found.');
+          outputEmpty(result, 'No dev resources found.', options);
           return;
         }
         output(result, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -158,8 +152,7 @@ export function componentsCommand(): Command {
         });
         output(result, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -172,14 +165,12 @@ export function componentsCommand(): Command {
         const config = requirePat();
         const { confirmAction } = await import('./helpers.js');
         if (!await confirmAction(`Delete dev resource ${devResourceId}?`)) {
-          console.log('Cancelled.');
-          return;
+          throw new Error('Cancelled. No changes made.');
         }
         await deleteDevResource(config, { file_key: fileKey, dev_resource_id: devResourceId });
         output({ deleted: devResourceId }, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 

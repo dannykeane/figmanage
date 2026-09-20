@@ -1,3 +1,4 @@
+import { validateInput } from '../validation.js';
 import type { AuthConfig } from '../auth/client.js';
 import { publicClient } from '../clients/public-api.js';
 
@@ -14,6 +15,7 @@ export async function listDevResources(
   config: AuthConfig,
   params: { file_key: string; node_ids?: string[] },
 ): Promise<DevResource[]> {
+  validateInput('list_dev_resources', params);
   const reqParams: Record<string, string> = {};
   if (params.node_ids?.length) reqParams.node_ids = params.node_ids.join(',');
   const res = await publicClient(config).get(
@@ -42,6 +44,7 @@ export async function createDevResource(
   config: AuthConfig,
   params: CreateDevResourceParams,
 ): Promise<Record<string, any>> {
+  validateInput('create_dev_resource', params);
   const res = await publicClient(config).post('/v1/dev_resources', {
     dev_resources: [{
       file_key: params.file_key,
@@ -57,6 +60,7 @@ export async function deleteDevResource(
   config: AuthConfig,
   params: { file_key: string; dev_resource_id: string },
 ): Promise<void> {
+  validateInput('delete_dev_resource', params);
   await publicClient(config).delete(
     `/v1/files/${params.file_key}/dev_resources/${params.dev_resource_id}`,
   );

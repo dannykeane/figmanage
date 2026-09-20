@@ -1,3 +1,4 @@
+import { validateInput } from '../validation.js';
 import type { AuthConfig } from '../auth/client.js';
 import { internalClient } from '../clients/internal-api.js';
 import { requireOrgId } from '../helpers.js';
@@ -6,6 +7,7 @@ export async function listOrgLibraries(
   config: AuthConfig,
   params: { org_id?: string },
 ): Promise<any> {
+  validateInput('list_org_libraries', params);
   const orgId = requireOrgId(config, params.org_id);
 
   const res = await internalClient(config).get('/api/design_systems/libraries', {

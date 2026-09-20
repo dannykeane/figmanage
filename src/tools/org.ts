@@ -1,29 +1,29 @@
-import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { AuthConfig } from '../auth/client.js';
-import { defineTool, toolResult, toolError, toolSummary, figmaId, requireOrgId } from './register.js';
 import { formatApiError } from '../helpers.js';
 import {
-  listAdmins,
-  listOrgTeams,
-  seatUsage,
-  listTeamMembers,
-  billingOverview,
-  listInvoices,
-  orgDomains,
-  aiCreditUsage,
-  exportMembers,
-  listOrgMembers,
-  contractRates,
-  changeSeat,
   activityLog,
-  listPayments,
-  removeOrgMember,
+  addUserGroupMembers,
+  aiCreditUsage,
+  billingOverview,
+  changeSeat,
+  contractRates,
   createUserGroup,
   deleteUserGroups,
-  addUserGroupMembers,
+  exportMembers,
+  listAdmins,
+  listInvoices,
+  listOrgMembers,
+  listOrgTeams,
+  listPayments,
+  listTeamMembers,
+  orgDomains,
+  removeOrgMember,
   removeUserGroupMembers,
+  seatUsage,
 } from '../operations/org.js';
+import { inputSchemas } from '../schemas.js';
+import { defineTool, toolError, toolResult, toolSummary } from './register.js';
 
 // -- list_admins --
 
@@ -36,10 +36,7 @@ defineTool({
       'list_admins',
       {
         description: 'List org admins with their permission levels, seat status, and email validation state.',
-        inputSchema: {
-          org_id: figmaId.optional().describe('Org ID override (defaults to current workspace)'),
-          include_license_admins: z.boolean().optional().describe('Include license admins (default false)'),
-        },
+        inputSchema: inputSchemas.list_admins,
       },
       async ({ org_id, include_license_admins }) => {
         try {
@@ -64,10 +61,7 @@ defineTool({
       'list_org_teams',
       {
         description: 'List all teams in the org with member counts, project counts, and access levels.',
-        inputSchema: {
-          org_id: figmaId.optional().describe('Org ID override (defaults to current workspace)'),
-          include_secret_teams: z.boolean().optional().describe('Include secret teams (default false)'),
-        },
+        inputSchema: inputSchemas.list_org_teams,
       },
       async ({ org_id, include_secret_teams }) => {
         try {
@@ -92,10 +86,7 @@ defineTool({
       'seat_usage',
       {
         description: 'Seat usage breakdown: permission counts, seat types, activity recency, and account type distribution.',
-        inputSchema: {
-          org_id: figmaId.optional().describe('Org ID override (defaults to current workspace)'),
-          search_query: z.string().optional().describe('Filter counts by user search query'),
-        },
+        inputSchema: inputSchemas.seat_usage,
       },
       async ({ org_id, search_query }) => {
         try {
@@ -120,9 +111,7 @@ defineTool({
       'list_team_members',
       {
         description: 'List members of a team with name, email, avatar, last active date, and role.',
-        inputSchema: {
-          team_id: figmaId.describe('Team ID'),
-        },
+        inputSchema: inputSchemas.list_team_members,
       },
       async ({ team_id }) => {
         try {
@@ -147,9 +136,7 @@ defineTool({
       'billing_overview',
       {
         description: 'Org billing data including invoice history, status, amounts, and billing periods.',
-        inputSchema: {
-          org_id: figmaId.optional().describe('Org ID override (defaults to current workspace)'),
-        },
+        inputSchema: inputSchemas.billing_overview,
       },
       async ({ org_id }) => {
         try {
@@ -174,9 +161,7 @@ defineTool({
       'list_invoices',
       {
         description: 'List open and upcoming invoices for the org.',
-        inputSchema: {
-          org_id: figmaId.optional().describe('Org ID override (defaults to current workspace)'),
-        },
+        inputSchema: inputSchemas.list_invoices,
       },
       async ({ org_id }) => {
         try {
@@ -201,9 +186,7 @@ defineTool({
       'org_domains',
       {
         description: 'Org domain configuration and SSO/SAML settings.',
-        inputSchema: {
-          org_id: figmaId.optional().describe('Org ID override (defaults to current workspace)'),
-        },
+        inputSchema: inputSchemas.org_domains,
       },
       async ({ org_id }) => {
         try {
@@ -228,10 +211,7 @@ defineTool({
       'ai_credit_usage',
       {
         description: 'AI credit usage summary. Provide a team_id and the plan is resolved automatically, or pass plan_id directly.',
-        inputSchema: {
-          team_id: figmaId.describe('Team ID (used to resolve the billing plan)'),
-          plan_id: figmaId.optional().describe('Plan ID override (skips team folder lookup)'),
-        },
+        inputSchema: inputSchemas.ai_credit_usage,
       },
       async ({ team_id, plan_id }) => {
         try {
@@ -257,9 +237,7 @@ defineTool({
       'export_members',
       {
         description: 'Trigger async CSV export of all org members. The CSV is sent to the admin email on file.',
-        inputSchema: {
-          org_id: figmaId.optional().describe('Org ID override (defaults to current workspace)'),
-        },
+        inputSchema: inputSchemas.export_members,
       },
       async ({ org_id }) => {
         try {
@@ -284,10 +262,7 @@ defineTool({
       'list_org_members',
       {
         description: 'List org members with seat type, permission, email, and last active date. Use to resolve org_user_ids for change_seat.',
-        inputSchema: {
-          org_id: figmaId.optional().describe('Org ID override (defaults to current workspace)'),
-          search_query: z.string().optional().describe('Filter members by name or email'),
-        },
+        inputSchema: inputSchemas.list_org_members,
       },
       async ({ org_id, search_query }) => {
         try {
@@ -312,9 +287,7 @@ defineTool({
       'contract_rates',
       {
         description: 'Seat pricing for the org. Returns monthly cost per seat type (expert, developer, collaborator).',
-        inputSchema: {
-          org_id: figmaId.optional().describe('Org ID override (defaults to current workspace)'),
-        },
+        inputSchema: inputSchemas.contract_rates,
       },
       async ({ org_id }) => {
         try {
@@ -341,17 +314,12 @@ defineTool({
       'change_seat',
       {
         description: 'Change a user\'s seat type. Accepts user_id or email to identify the user. Upgrades affect billing.',
-        inputSchema: {
-          user_id: z.string().describe('User ID or email address of the target user'),
-          seat_type: z.enum(['full', 'dev', 'collab', 'view']).describe('Target seat type'),
-          org_id: figmaId.optional().describe('Org ID override (defaults to current workspace)'),
-          confirm: z.boolean().optional().describe('Required when upgrading to a higher/paid seat. Set to true to authorize the billing change.'),
-        },
+        inputSchema: inputSchemas.change_seat,
       },
       async ({ user_id, seat_type, org_id, confirm }) => {
         try {
           const result = await changeSeat(config, { user_id, seat_type, org_id, confirm });
-          if (typeof result === 'string') return toolResult(result);
+          if (typeof result === 'string') return toolResult(result, result);
           return toolSummary(`Seat changed: ${result.old_seat} -> ${result.new_seat}.`, result);
         } catch (e: any) {
           return toolError(`Failed to change seat: ${formatApiError(e)}`);
@@ -372,19 +340,12 @@ defineTool({
       'activity_log',
       {
         description: 'Org audit log. Shows who did what, when. Filter by email for per-user activity. Supports date ranges and cursor pagination.',
-        inputSchema: {
-          org_id: figmaId.optional().describe('Org ID override (defaults to current workspace)'),
-          emails: z.string().optional().describe('Comma-separated emails to filter (e.g. "alice@acme.com,bob@acme.com")'),
-          start_time: z.string().optional().describe('Start date (ISO or YYYY-MM-DD). Defaults to 30 days ago.'),
-          end_time: z.string().optional().describe('End date (ISO or YYYY-MM-DD). Defaults to now.'),
-          page_size: z.number().int().optional().describe('Entries per page (default: 50)'),
-          after: z.string().optional().describe('Pagination cursor from previous response'),
-        },
+        inputSchema: inputSchemas.activity_log,
       },
       async ({ org_id, emails, start_time, end_time, page_size, after }) => {
         try {
           const result = await activityLog(config, { org_id, emails, start_time, end_time, page_size, after });
-          if (result.entries.length === 0) return toolResult('No activity log entries found.');
+          if (result.entries.length === 0) return toolResult('No activity log entries found.', result);
           const paginationNote = result.pagination
             ? `\nMore results available. Pass after: "${result.pagination.after}" to get the next page.`
             : '';
@@ -408,14 +369,12 @@ defineTool({
       'list_payments',
       {
         description: 'List paid invoices / payment history for the org.',
-        inputSchema: {
-          org_id: figmaId.optional().describe('Org ID override (defaults to current workspace)'),
-        },
+        inputSchema: inputSchemas.list_payments,
       },
       async ({ org_id }) => {
         try {
           const result = await listPayments(config, { org_id });
-          if (result.length === 0) return toolResult('No paid invoices found.');
+          if (result.length === 0) return toolResult('No paid invoices found.', result);
           return toolSummary(`${result.length} paid invoice(s).`, result, 'Use billing_overview for current billing status, or list_invoices for open invoices.');
         } catch (e: any) {
           return toolError(`Failed to list payments: ${formatApiError(e)}`);
@@ -438,11 +397,7 @@ defineTool({
       'remove_org_member',
       {
         description: 'Permanently remove a member from the org. They lose all access to teams, projects, files, and apps. Cannot be undone. Requires confirm: true.',
-        inputSchema: {
-          user_identifier: z.string().describe('Email or user_id of the member to remove'),
-          org_id: figmaId.optional().describe('Org ID override (defaults to current workspace)'),
-          confirm: z.boolean().optional().describe('Must be true to execute. Without it, returns a warning explaining consequences.'),
-        },
+        inputSchema: inputSchemas.remove_org_member,
       },
       async ({ user_identifier, org_id, confirm }) => {
         try {
@@ -468,14 +423,7 @@ defineTool({
       'create_user_group',
       {
         description: 'Create a user group. Provide team_id to auto-resolve the billing plan, or pass plan_id directly.',
-        inputSchema: {
-          name: z.string().describe('Group name'),
-          description: z.string().optional().describe('Group description'),
-          team_id: figmaId.optional().describe('Team ID (used to resolve billing plan)'),
-          plan_id: figmaId.optional().describe('Plan ID override (skips team lookup)'),
-          emails: z.array(z.string()).optional().describe('Emails to add as initial members'),
-          should_notify: z.boolean().optional().describe('Notify members (default true)'),
-        },
+        inputSchema: inputSchemas.create_user_group,
       },
       async ({ name, description, team_id, plan_id, emails, should_notify }) => {
         try {
@@ -502,9 +450,7 @@ defineTool({
       'delete_user_groups',
       {
         description: 'Delete one or more user groups by ID.',
-        inputSchema: {
-          user_group_ids: z.array(figmaId).describe('User group IDs to delete'),
-        },
+        inputSchema: inputSchemas.delete_user_groups,
       },
       async ({ user_group_ids }) => {
         try {
@@ -530,10 +476,7 @@ defineTool({
       'add_user_group_members',
       {
         description: 'Add members to a user group by email.',
-        inputSchema: {
-          user_group_id: figmaId.describe('User group ID'),
-          emails: z.array(z.string()).describe('Email addresses to add'),
-        },
+        inputSchema: inputSchemas.add_user_group_members,
       },
       async ({ user_group_id, emails }) => {
         try {
@@ -559,10 +502,7 @@ defineTool({
       'remove_user_group_members',
       {
         description: 'Remove members from a user group by user ID.',
-        inputSchema: {
-          user_group_id: figmaId.describe('User group ID'),
-          user_ids: z.array(z.string()).describe('User IDs to remove'),
-        },
+        inputSchema: inputSchemas.remove_user_group_members,
       },
       async ({ user_group_id, user_ids }) => {
         try {

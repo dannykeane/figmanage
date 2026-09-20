@@ -12,6 +12,7 @@ export interface AuthConfig {
   orgId?: string;
   orgs?: OrgEntry[];
   isAdmin?: boolean;
+  onWorkspaceChange?: () => Promise<void>;
 }
 
 function parseOrgs(raw?: string): OrgEntry[] | undefined {
@@ -74,7 +75,7 @@ export function loadAuthConfig(): AuthConfig {
 
   // Fall back to config file
   const fileConfig = loadFromConfigFile();
-  if (fileConfig) return fileConfig;
+  if (fileConfig) return { ...fileConfig, orgId: envConfig.orgId || fileConfig.orgId, orgs: envConfig.orgs };
 
   // Return env config as-is (empty or partial)
   return envConfig;

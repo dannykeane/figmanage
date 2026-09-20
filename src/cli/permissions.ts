@@ -1,15 +1,14 @@
 import { Command } from 'commander';
 import {
-  getPermissions,
-  setPermissions,
-  share,
-  revokeAccess,
-  listRoleRequests,
   approveRoleRequest,
   denyRoleRequest,
+  getPermissions,
+  listRoleRequests,
+  revokeAccess,
+  setPermissions,
+  share,
 } from '../operations/permissions.js';
-import { output, error } from './format.js';
-import { formatApiError } from '../helpers.js';
+import { fail, output } from './format.js';
 import { requireCookie } from './helpers.js';
 
 export function permissionsCommand(): Command {
@@ -29,8 +28,7 @@ export function permissionsCommand(): Command {
         });
         output(result, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -55,8 +53,7 @@ export function permissionsCommand(): Command {
         });
         output({ message: msg }, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -81,8 +78,7 @@ export function permissionsCommand(): Command {
         });
         output(result, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -100,8 +96,7 @@ export function permissionsCommand(): Command {
         const config = requireCookie();
         const { confirmAction } = await import('./helpers.js');
         if (!await confirmAction(`Revoke ${userId}'s access to ${resourceType} ${resourceId}?`)) {
-          console.log('Cancelled.');
-          return;
+          throw new Error('Cancelled. No changes made.');
         }
         const msg = await revokeAccess(config, {
           resource_type: resourceType,
@@ -110,8 +105,7 @@ export function permissionsCommand(): Command {
         });
         output({ message: msg }, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -125,8 +119,7 @@ export function permissionsCommand(): Command {
         const result = await listRoleRequests(config);
         output(result, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -140,8 +133,7 @@ export function permissionsCommand(): Command {
         const msg = await approveRoleRequest(config, { notification_id: notificationId });
         output({ message: msg }, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -155,8 +147,7 @@ export function permissionsCommand(): Command {
         const msg = await denyRoleRequest(config, { notification_id: notificationId });
         output({ message: msg }, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 

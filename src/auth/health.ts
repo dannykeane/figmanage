@@ -12,24 +12,26 @@ export async function checkAuth(config: AuthConfig): Promise<AuthStatus> {
   if (config.pat) {
     try {
       const res = await publicClient(config).get('/v1/me');
-      status.pat = { valid: true, user: res.data.handle || res.data.email };
+      status.pat = { valid: true, user: res.data.handle || res.data.email, user_id: res.data.id == null ? undefined : String(res.data.id) };
     } catch (e: any) {
       status.pat = {
         valid: false,
+        reason: e.response?.status === 401 ? 'expired' : e.response?.status === 403 ? 'permission_denied' : 'check_failed',
         error: e.response?.status === 403
-          ? 'PAT invalid or expired. Generate a new one at figma.com/developers'
+          ? 'Figma rejected the PAT identity check. Check token validity and the current_user:read scope in Figma settings.'
           : `PAT check failed: ${e.message}`,
       };
     }
   } else {
-    status.pat = { valid: false, error: 'No PAT configured (env or Keychain)' };
+    status.pat = { valid: false, reason: 'missing', error: 'No PAT configured. A PAT is optional for browser-session workspace tools.' };
   }
 
   if (config.cookie && config.userId) {
     try {
       const res = await internalClient(config).get('/api/user/state');
-      const user = res.data?.user;
-      status.cookie = { valid: true, user: user?.handle || user?.email || 'authenticated' };
+      if (res.data?.error === true) throw new Error('Figma rejected the session check.');
+      const user = res.data?.meta?.user || res.data?.user;
+      status.cookie = { valid: true, user: user?.handle || user?.email || 'authenticated', user_id: String(user?.id || config.userId) };
 
       // Populate org registry from user/state response
       const orgs = (res.data?.meta?.orgs || []).map((o: any) => ({
@@ -39,20 +41,21 @@ export async function checkAuth(config: AuthConfig): Promise<AuthStatus> {
       if (orgs.length > 0) config.orgs = orgs;
     } catch (e: any) {
       const code = e.response?.status;
-      if (code === 401 || code === 403) {
+      if (code === 401) {
         status.cookie = {
           valid: false,
-          error: 'Session cookie expired. Extract a new one from browser DevTools: Application > Cookies > __Host-figma.authn',
+          reason: 'expired',
+          error: 'Figma session expired. Log into Figma in Chrome, then run figmanage login --refresh or use the MCP setup tools.',
         };
       } else {
-        status.cookie = { valid: false, error: `Cookie check failed: ${e.message}` };
+        status.cookie = { valid: false, reason: code === 403 ? 'permission_denied' : 'check_failed', error: code === 403 ? 'Figma denied this session check. Verify account access; this does not establish that the session expired.' : `Cookie check failed: ${e.message}` };
       }
     }
   } else {
     const missing = [];
     if (!config.cookie) missing.push('FIGMA_AUTH_COOKIE');
     if (!config.userId) missing.push('FIGMA_USER_ID');
-    status.cookie = { valid: false, error: `${missing.join(', ')} not set` };
+    status.cookie = { valid: false, reason: 'missing', error: `${missing.join(', ')} not set. Browser access is optional for PAT tools.` };
   }
 
   return status;

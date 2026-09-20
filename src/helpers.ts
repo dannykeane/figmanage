@@ -5,17 +5,21 @@ import type { AuthConfig } from './auth/client.js';
  * Includes response body when available, maps common status codes.
  */
 export function formatApiError(e: any): string {
+  if (e?.name === 'ZodError') return 'Invalid input: ' + e.issues.map((issue: any) => `${issue.path.join('.') || 'input'}: ${issue.message}`).join('; ');
+  if (e?.isAxiosError && (!e.response || e.response.status >= 500) && !['get', 'head', 'options'].includes(e.config?.method?.toLowerCase())) {
+    return 'Write outcome unknown: no successful response was received. Check the resource before retrying. ' + e.message;
+  }
   const status = e.response?.status;
   if (!status) return e.message || 'Unknown error';
 
   const body = e.response?.data;
   const detail = typeof body === 'string'
     ? body
-    : body?.message || body?.err || body?.error || '';
+    : [body?.message, body?.err, body?.error].find(value => typeof value === 'string' && value) || '';
 
   const statusMessages: Record<number, string> = {
     400: 'Bad request',
-    401: 'Authentication expired or invalid. Re-run setup.',
+    401: 'Authentication expired or invalid. Run figmanage doctor or call setup_status for recovery.',
     403: 'Insufficient permissions for this action',
     404: 'Resource not found. Check the ID.',
     409: 'Conflict -- resource may already exist or be in use',

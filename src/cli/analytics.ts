@@ -1,7 +1,6 @@
 import { Command } from 'commander';
-import { libraryUsage, componentUsage } from '../operations/analytics.js';
-import { output, error } from './format.js';
-import { formatApiError } from '../helpers.js';
+import { componentUsage, libraryUsage } from '../operations/analytics.js';
+import { fail, output } from './format.js';
 import { requireCookie } from './helpers.js';
 
 export function analyticsCommand(): Command {
@@ -21,12 +20,11 @@ export function analyticsCommand(): Command {
         const config = requireCookie();
         const result = await libraryUsage(config, {
           library_file_key: libraryFileKey,
-          days: options.days ? parseInt(options.days, 10) : undefined,
+          days: options.days ? Number(options.days) : undefined,
         });
         output(result, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -47,8 +45,7 @@ export function analyticsCommand(): Command {
         });
         output(result, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 

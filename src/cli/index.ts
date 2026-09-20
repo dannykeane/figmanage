@@ -1,37 +1,69 @@
 import type { Command } from 'commander';
-import { navigateCommand } from './navigate.js';
-import { filesCommand } from './files.js';
-import { projectsCommand } from './projects.js';
-import { permissionsCommand } from './permissions.js';
-import { versionsCommand } from './versions.js';
+import { analyticsCommand } from './analytics.js';
 import { branchingCommand } from './branching.js';
 import { commentsCommand } from './comments.js';
-import { exportCommand } from './export.js';
-import { readingCommand } from './reading.js';
-import { componentsCommand } from './components.js';
-import { webhooksCommand } from './webhooks.js';
-import { variablesCommand } from './variables.js';
-import { analyticsCommand } from './analytics.js';
-import { orgCommand } from './org.js';
-import { librariesCommand } from './libraries.js';
-import { teamsCommand } from './teams.js';
 import { completionCommand } from './completion.js';
+import { componentsCommand } from './components.js';
 import {
-  fileSummaryCommand,
-  workspaceOverviewCommand,
-  openCommentsCommand,
-  cleanupStaleFilesCommand,
-  organizeProjectCommand,
-  setupProjectStructureCommand,
-  seatOptimizationCommand,
-  permissionAuditCommand,
   branchCleanupCommand,
+  cleanupStaleFilesCommand,
+  fileSummaryCommand,
   offboardUserCommand,
   onboardUserCommand,
+  openCommentsCommand,
+  organizeProjectCommand,
+  permissionAuditCommand,
   quarterlyReportCommand,
+  seatOptimizationCommand,
+  setupProjectStructureCommand,
+  workspaceOverviewCommand,
 } from './compound-commands.js';
+import { exportCommand } from './export.js';
+import { filesCommand } from './files.js';
+import { librariesCommand } from './libraries.js';
+import { mcpConfigCommand } from './mcp-config.js';
+import { navigateCommand } from './navigate.js';
+import { orgCommand } from './org.js';
+import { permissionsCommand } from './permissions.js';
+import { projectsCommand } from './projects.js';
+import { readingCommand } from './reading.js';
+import { schemaCommand } from './schema.js';
+import { teamsCommand } from './teams.js';
+import { variablesCommand } from './variables.js';
+import { versionsCommand } from './versions.js';
+import { webhooksCommand } from './webhooks.js';
 
 export function registerCliCommands(program: Command): void {
+  program.addCommand(mcpConfigCommand());
+  program.command('skills')
+    .description('Locate the optional bundled agent workflow skill')
+    .option('--json', 'Force JSON output')
+    .action(async (options: { json?: boolean }) => {
+      const { fileURLToPath } = await import('node:url');
+      const { output } = await import('./format.js');
+      output([{ name: 'figmanage', path: fileURLToPath(new URL('../../skills/figmanage/SKILL.md', import.meta.url)), description: 'Figma workspace management, setup recovery, and official Figma MCP handoffs' }], options);
+    });
+
+  program.command('doctor')
+    .description('Check live credentials and show the next setup or recovery steps')
+    .option('--json', 'Force JSON output')
+    .action(async (options: { json?: boolean }) => {
+      const { setupStatus } = await import('../auth/setup-status.js');
+      const { output, fail, isMachineOutput } = await import('./format.js');
+      try {
+        const result = await setupStatus();
+        if (!result.ready) process.exitCode = 1;
+        if (isMachineOutput(options)) output(result, options);
+        else {
+          console.log(result.ready ? 'Ready for the available tools.' : 'Setup needs attention.');
+          console.log(`Credentials: ${result.credential_source}`);
+          console.log(`PAT: ${result.status.pat.valid ? `connected (${result.status.pat.user})` : result.status.pat.error}`);
+          console.log(`Browser session: ${result.status.cookie.valid ? `connected (${result.status.cookie.user})` : result.status.cookie.error}`);
+          for (const action of result.next_actions) console.log(`\n${action.message}`);
+        }
+      } catch (error) { fail(error); }
+    });
+
   // Auth commands (flat -- not resource-scoped)
   program
     .command('login')
@@ -46,9 +78,10 @@ export function registerCliCommands(program: Command): void {
   program
     .command('whoami')
     .description('Show current authentication status')
-    .action(async () => {
+    .option('--json', 'Force JSON output')
+    .action(async (options: { json?: boolean }) => {
       const { handleWhoami } = await import('./whoami.js');
-      await handleWhoami();
+      await handleWhoami(options);
     });
 
   program
@@ -111,4 +144,5 @@ export function registerCliCommands(program: Command): void {
 
   // Completion must be registered last so it can introspect all commands above
   program.addCommand(completionCommand(program));
+  program.addCommand(schemaCommand(program));
 }

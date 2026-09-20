@@ -115,6 +115,9 @@ describe('offboard_user', () => {
       if (url.includes('/teams/t2/members')) {
         return Promise.resolve(axiosResponse({ meta: [] }));
       }
+      if (url.includes('/roles/team/')) {
+        return Promise.resolve(axiosResponse({ meta: [] }));
+      }
       // Team folders (projects)
       if (url.includes('/teams/t1/folders')) {
         return Promise.resolve(axiosResponse({
@@ -156,7 +159,8 @@ describe('offboard_user', () => {
     expect(data.file_ownership[0].file_key).toBe('f1');
     expect(data.summary.files_owned).toBe(1);
     expect(data.transfer_plan.length).toBeGreaterThan(0);
-    expect(data.note).toContain('execute=true');
+    expect(data.discovery.complete).toBe(false);
+    expect(data.note).toContain('Discovery is incomplete');
   });
 
   it('blocks self-offboarding', async () => {

@@ -1,9 +1,9 @@
-import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { AuthConfig } from '../auth/client.js';
-import { defineTool, toolResult, toolError, toolSummary, figmaId } from './register.js';
 import { formatApiError } from '../helpers.js';
-import { createTeam, renameTeam, deleteTeam, addTeamMember, removeTeamMember } from '../operations/teams.js';
+import { addTeamMember, createTeam, deleteTeam, removeTeamMember, renameTeam } from '../operations/teams.js';
+import { inputSchemas } from '../schemas.js';
+import { defineTool, toolError, toolResult, toolSummary } from './register.js';
 
 // -- create_team --
 
@@ -17,10 +17,7 @@ defineTool({
       'create_team',
       {
         description: 'Create a new team in the org.',
-        inputSchema: {
-          name: z.string().describe('Team name'),
-          org_id: figmaId.optional().describe('Org ID override (defaults to current workspace)'),
-        },
+        inputSchema: inputSchemas.create_team,
       },
       async ({ name, org_id }) => {
         try {
@@ -45,10 +42,7 @@ defineTool({
       'rename_team',
       {
         description: 'Rename an existing team.',
-        inputSchema: {
-          team_id: figmaId.describe('Team ID'),
-          name: z.string().describe('New team name'),
-        },
+        inputSchema: inputSchemas.rename_team,
       },
       async ({ team_id, name }) => {
         try {
@@ -75,9 +69,7 @@ defineTool({
       'delete_team',
       {
         description: 'Permanently delete a team and all its projects/files. This cannot be undone. All team members lose access.',
-        inputSchema: {
-          team_id: figmaId.describe('Team ID'),
-        },
+        inputSchema: inputSchemas.delete_team,
       },
       async ({ team_id }) => {
         try {
@@ -103,11 +95,7 @@ defineTool({
       'add_team_member',
       {
         description: 'Add a member to a team by email. Level: 100 = can view (default), 300 = can edit, 999 = admin.',
-        inputSchema: {
-          team_id: figmaId.describe('Team ID'),
-          email: z.string().describe('Email address of the user to add'),
-          level: z.number().int().optional().describe('Permission level: 100 = view (default), 300 = edit, 999 = admin'),
-        },
+        inputSchema: inputSchemas.add_team_member,
       },
       async ({ team_id, email, level }) => {
         try {
@@ -134,10 +122,7 @@ defineTool({
       'remove_team_member',
       {
         description: 'Remove a member from a team. The user loses access to all team projects and files.',
-        inputSchema: {
-          team_id: figmaId.describe('Team ID'),
-          user_id: figmaId.describe('User ID to remove'),
-        },
+        inputSchema: inputSchemas.remove_team_member,
       },
       async ({ team_id, user_id }) => {
         try {

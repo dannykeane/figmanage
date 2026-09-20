@@ -1,7 +1,6 @@
 import { Command } from 'commander';
 import { listOrgLibraries } from '../operations/libraries.js';
-import { output, error } from './format.js';
-import { formatApiError } from '../helpers.js';
+import { fail, output } from './format.js';
 import { requireCookie } from './helpers.js';
 
 export function librariesCommand(): Command {
@@ -22,8 +21,7 @@ export function librariesCommand(): Command {
         const result = await listOrgLibraries(config, { org_id: options.orgId });
         output(result, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 

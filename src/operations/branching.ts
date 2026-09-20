@@ -1,3 +1,4 @@
+import { validateInput } from '../validation.js';
 import type { AuthConfig } from '../auth/client.js';
 import { hasCookie } from '../auth/client.js';
 import { publicClient } from '../clients/public-api.js';
@@ -21,6 +22,7 @@ export async function listBranches(
   config: AuthConfig,
   params: { file_key: string },
 ): Promise<Branch[]> {
+  validateInput('list_branches', params);
   let branches: any[];
 
   if (hasCookie(config)) {
@@ -47,6 +49,7 @@ export async function createBranch(
   config: AuthConfig,
   params: { file_key: string; name: string },
 ): Promise<CreatedBranch> {
+  validateInput('create_branch', params);
   const res = await internalClient(config).post(
     `/api/multiplayer/${params.file_key}/branch_create?name=${encodeURIComponent(params.name)}`,
   );
@@ -64,6 +67,7 @@ export async function deleteBranch(
   config: AuthConfig,
   params: { branch_key: string },
 ): Promise<void> {
+  validateInput('delete_branch', params);
   await internalClient(config).delete('/api/files_batch', {
     data: { files: [{ key: params.branch_key }], trashed: true },
   });

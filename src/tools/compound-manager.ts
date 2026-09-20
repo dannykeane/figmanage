@@ -1,13 +1,14 @@
-import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { AuthConfig } from '../auth/client.js';
-import { defineTool, toolResult, toolError, toolSummary, figmaId } from './register.js';
 import { formatApiError } from '../helpers.js';
+import { hasFailures } from '../results.js';
 import {
   offboardUser,
   onboardUser,
   quarterlyDesignOpsReport,
 } from '../operations/compound-manager.js';
+import { inputSchemas } from '../schemas.js';
+import { defineTool, toolError, toolSummary } from './register.js';
 
 // -- offboard_user --
 
@@ -21,16 +22,10 @@ defineTool({
     server.registerTool(
       'offboard_user',
       {
-        description: 'Audit and optionally execute user offboarding. Default: read-only audit. With execute=true: transfers file ownership, revokes access, downgrades seat. With remove_from_org=true: also permanently removes the user from the org (cannot be undone).',
-        inputSchema: {
-          user_identifier: z.string().describe('Email or user_id of the user to offboard'),
-          execute: z.boolean().optional().default(false).describe('Execute the offboarding (default: false, audit only)'),
-          transfer_to: z.string().optional().describe('Email or user_id to transfer file ownership to (required if user owns files and execute=true)'),
-          remove_from_org: z.boolean().optional().default(false).describe('Permanently remove from org after offboarding (cannot be undone). Requires execute=true.'),
-          org_id: figmaId.optional().describe('Org ID override (defaults to current workspace)'),
-        },
+        description: 'Audit and optionally execute user offboarding. Default: read-only audit. Complete nested-folder discovery requires a PAT for the browser account with current_user:read and folders:read. With execute=true: transfers file ownership, removes discovered direct grants, and verifies access and seat changes. Team/folder ownership and retained org admin roles can block execution. Inspect coverage, execution_blockers, and remaining_work; groups, drafts, and inherited access require separate review. With remove_from_org=true: also permanently removes the user from the org (cannot be undone).',
+        inputSchema: inputSchemas.offboard_user,
       },
-      async ({ user_identifier, execute, transfer_to, remove_from_org, org_id }) => {
+      async ({ user_identifier, execute, transfer_to, remove_from_org, org_id }, extra) => {
         try {
           const result = await offboardUser(config, {
             user_identifier,
@@ -38,8 +33,13 @@ defineTool({
             transfer_to,
             remove_from_org: remove_from_org ?? false,
             org_id,
-          });
-          const mode = (execute ?? false) ? 'Offboarding complete.' : 'Offboarding audit (read-only). Set execute=true to proceed.';
+          }, extra?._meta?.progressToken !== undefined ? event => extra.sendNotification({
+            method: 'notifications/progress',
+            params: { progressToken: extra._meta!.progressToken!, progress: event.sequence, message: `${event.phase}: ${event.message}${event.resource_id ? ` (${event.resource_id})` : ''}${event.status ? ` — ${event.status}` : ''}` },
+          }) : undefined);
+          const mode = (execute ?? false)
+            ? hasFailures(result) ? 'Offboarding stopped with failed or incomplete steps.' : 'Planned changes verified. Review remaining_work before treating the departure as complete.'
+            : 'Offboarding audit (read-only). Review discovery completeness and the next step below.';
           return toolSummary(mode, result);
         } catch (e: any) {
           return toolError(`Failed to audit user for offboarding: ${formatApiError(e)}`);
@@ -61,15 +61,7 @@ defineTool({
       'onboard_user',
       {
         description: 'Invite a user to teams and optionally share files and set seat type. Sends invite emails per team.',
-        inputSchema: {
-          email: z.string().email().describe('Email address to invite'),
-          team_ids: z.array(figmaId).min(1).describe('Team IDs to invite the user to'),
-          role: z.enum(['editor', 'viewer']).optional().default('editor').describe('Role for team access (default: editor)'),
-          share_files: z.array(figmaId).optional().describe('File keys to share with the user (viewer access)'),
-          seat_type: z.enum(['full', 'dev', 'collab', 'view']).optional().describe('Seat type to assign after invite'),
-          confirm: z.boolean().optional().describe('Required to execute seat change'),
-          org_id: figmaId.optional().describe('Org ID override (defaults to current workspace)'),
-        },
+        inputSchema: inputSchemas.onboard_user,
       },
       async ({ email, team_ids, role, share_files, seat_type, confirm, org_id }) => {
         try {
@@ -102,10 +94,7 @@ defineTool({
       'quarterly_design_ops_report',
       {
         description: 'Org-wide design ops snapshot: seat utilization, team activity, billing, and library adoption over a given period.',
-        inputSchema: {
-          org_id: figmaId.optional().describe('Org ID override (defaults to current workspace)'),
-          days: z.number().min(1).max(365).optional().default(90).describe('Lookback period in days (default: 90)'),
-        },
+        inputSchema: inputSchemas.quarterly_design_ops_report,
       },
       async ({ org_id, days }) => {
         try {

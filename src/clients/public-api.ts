@@ -37,11 +37,10 @@ export function publicClient(config: AuthConfig): AxiosInstance {
     retryCondition: (error) => {
       const status = error.response?.status;
       if (status === 401 || status === 403) return false;
-      if (status === 429) {
-        const method = error.config?.method?.toUpperCase();
-        return ['GET', 'HEAD', 'OPTIONS'].includes(method || '');
-      }
-      return axiosRetry.isNetworkOrIdempotentRequestError(error);
+      const method = error.config?.method?.toUpperCase();
+      // A lost response cannot establish whether a write was applied.
+      if (!['GET', 'HEAD', 'OPTIONS'].includes(method || '')) return false;
+      return status === 429 || axiosRetry.isNetworkOrIdempotentRequestError(error);
     },
   });
 

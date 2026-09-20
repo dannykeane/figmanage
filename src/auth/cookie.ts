@@ -294,11 +294,15 @@ export async function validateSession(cookieValue: string, userId: string): Prom
 // --- PAT validation ---
 
 export async function validatePat(pat: string): Promise<string> {
+  return (await validatePatIdentity(pat)).user;
+}
+
+export async function validatePatIdentity(pat: string): Promise<{ id?: string; user: string }> {
   const res = await axios.get('https://api.figma.com/v1/me', {
     headers: { 'X-Figma-Token': pat },
     timeout: 15000,
   });
-  return res.data.handle || res.data.email || 'valid';
+  return { id: res.data.id == null ? undefined : String(res.data.id), user: res.data.handle || res.data.email || 'valid' };
 }
 
 // --- Chrome profile info ---

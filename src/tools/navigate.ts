@@ -1,20 +1,20 @@
-import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { AuthConfig } from '../auth/client.js';
-import { defineTool, toolResult, toolError, toolSummary, figmaId } from './register.js';
 import { formatApiError } from '../helpers.js';
 import {
   checkAuthStatus,
-  listOrgs,
-  switchOrg,
-  listTeams,
-  listProjects,
-  listFiles,
-  listRecentFiles,
-  search,
   getFileInfo,
   listFavorites,
+  listFiles,
+  listOrgs,
+  listProjects,
+  listRecentFiles,
+  listTeams,
+  search,
+  switchOrg,
 } from '../operations/navigate.js';
+import { inputSchemas } from '../schemas.js';
+import { defineTool, toolError, toolResult, toolSummary } from './register.js';
 
 // -- check_auth --
 
@@ -28,7 +28,7 @@ defineTool({
       async () => {
         try {
           const result = await checkAuthStatus(config);
-          return toolResult(result.formatted);
+          return toolResult(result.formatted, result);
         } catch (e: any) {
           return toolError(`Auth check failed: ${e.message}`);
         }
@@ -58,7 +58,7 @@ defineTool({
           }
 
           if (orgs.length === 0) {
-            return toolResult('No workspaces found. You may be on a free/starter plan.');
+            return toolResult('No workspaces found. You may be on a free/starter plan.', orgs);
           }
           return toolSummary(`Found ${orgs.length} workspace(s).`, orgs, 'Use switch_org to change workspace, or list_teams to browse.');
         } catch (e: any) {
@@ -79,16 +79,15 @@ defineTool({
       'switch_org',
       {
         description: 'Switch active workspace. Accepts org name (fuzzy match) or ID. Use list_orgs to see available workspaces.',
-        inputSchema: {
-          org: z.string().describe('Org name or ID to switch to'),
-        },
+        inputSchema: inputSchemas.switch_org,
       },
       async ({ org }) => {
         try {
           const result = await switchOrg(config, { org });
           // Side effect: update config org ID
           config.orgId = result.current.id;
-          return toolResult(`Switched workspace: ${result.previous} -> ${result.current.name} (${result.current.id})`);
+          await config.onWorkspaceChange?.();
+          return toolResult(`Switched workspace: ${result.previous} -> ${result.current.name} (${result.current.id})`, result);
         } catch (e: any) {
           return toolError(`Failed to switch org: ${formatApiError(e)}`);
         }
@@ -111,7 +110,7 @@ defineTool({
       async () => {
         try {
           const teams = await listTeams(config);
-          if (teams.length === 0) return toolResult('No teams found.');
+          if (teams.length === 0) return toolResult('No teams found.', teams);
           return toolSummary(`Found ${teams.length} team(s).`, teams, 'Use list_projects with a team_id to browse projects.');
         } catch (e: any) {
           return toolError(`Failed to list teams: ${formatApiError(e)}`);
@@ -131,14 +130,12 @@ defineTool({
       'list_projects',
       {
         description: 'List projects (folders) in a team. Returns project IDs, names.',
-        inputSchema: {
-          team_id: figmaId.describe('Team ID'),
-        },
+        inputSchema: inputSchemas.list_projects,
       },
       async ({ team_id }) => {
         try {
           const projects = await listProjects(config, { team_id });
-          if (projects.length === 0) return toolResult('No projects found.');
+          if (projects.length === 0) return toolResult('No projects found.', projects);
           return toolSummary(`Found ${projects.length} project(s).`, projects, 'Use list_files with a project_id to see files.');
         } catch (e: any) {
           return toolError(`Failed to list projects: ${formatApiError(e)}`);
@@ -158,11 +155,7 @@ defineTool({
       'list_files',
       {
         description: 'List files in a project. Returns file keys, names, last modified, editor type. Supports pagination.',
-        inputSchema: {
-          project_id: figmaId.describe('Project (folder) ID'),
-          page_size: z.number().optional().describe('Results per page (default 25, max 100)'),
-          page_token: z.string().optional().describe('Pagination token from previous response'),
-        },
+        inputSchema: inputSchemas.list_files,
       },
       async ({ project_id, page_size, page_token }) => {
         try {
@@ -192,7 +185,7 @@ defineTool({
       async () => {
         try {
           const files = await listRecentFiles(config);
-          if (files.length === 0) return toolResult('No recent files.');
+          if (files.length === 0) return toolResult('No recent files.', files);
           return toolSummary(`${files.length} recently accessed file(s).`, files, 'Use get_file_info for details.');
         } catch (e: any) {
           return toolError(`Failed to list recent files: ${formatApiError(e)}`);
@@ -212,17 +205,13 @@ defineTool({
       'search',
       {
         description: 'Search for files across the workspace. Requires org context for results.',
-        inputSchema: {
-          query: z.string().describe('Search query'),
-          sort: z.enum(['relevancy', 'last_modified']).optional().describe('Sort order (default: relevancy)'),
-          org_id: figmaId.optional().describe('Org ID override (defaults to current workspace)'),
-        },
+        inputSchema: inputSchemas.search,
       },
       async ({ query, sort, org_id }) => {
         try {
           const results = await search(config, { query, sort, org_id });
           if (results.length === 0) {
-            return toolResult('No results. Try list_recent_files or browse via list_projects + list_files.');
+            return toolResult('No results. Try list_recent_files or browse via list_projects + list_files.', results);
           }
           return toolSummary(`Found ${results.length} result(s).`, results, 'Use get_file_info for file details.');
         } catch (e: any) {
@@ -243,9 +232,7 @@ defineTool({
       'get_file_info',
       {
         description: 'Get metadata for a file: name, last modified, editor type, project, team.',
-        inputSchema: {
-          file_key: figmaId.describe('Figma file key (from the URL)'),
-        },
+        inputSchema: inputSchemas.get_file_info,
       },
       async ({ file_key }) => {
         try {
@@ -273,7 +260,7 @@ defineTool({
       async () => {
         try {
           const favorites = await listFavorites(config);
-          if (favorites.length === 0) return toolResult('No favorites found.');
+          if (favorites.length === 0) return toolResult('No favorites found.', favorites);
           return toolSummary(`${favorites.length} favorited file(s).`, favorites, 'Use get_file_info for details.');
         } catch (e: any) {
           return toolError(`Failed to list favorites: ${formatApiError(e)}`);

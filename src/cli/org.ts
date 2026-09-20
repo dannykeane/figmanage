@@ -1,27 +1,26 @@
 import { Command } from 'commander';
 import {
-  listAdmins,
-  listOrgTeams,
-  seatUsage,
-  listTeamMembers,
-  billingOverview,
-  listInvoices,
-  orgDomains,
-  aiCreditUsage,
-  exportMembers,
-  listOrgMembers,
-  contractRates,
-  changeSeat,
   activityLog,
-  listPayments,
-  removeOrgMember,
+  addUserGroupMembers,
+  aiCreditUsage,
+  billingOverview,
+  changeSeat,
+  contractRates,
   createUserGroup,
   deleteUserGroups,
-  addUserGroupMembers,
+  exportMembers,
+  listAdmins,
+  listInvoices,
+  listOrgMembers,
+  listOrgTeams,
+  listPayments,
+  listTeamMembers,
+  orgDomains,
+  removeOrgMember,
   removeUserGroupMembers,
+  seatUsage,
 } from '../operations/org.js';
-import { output, error } from './format.js';
-import { formatApiError } from '../helpers.js';
+import { fail, output } from './format.js';
 import { requireCookie } from './helpers.js';
 
 export function orgCommand(): Command {
@@ -43,8 +42,7 @@ export function orgCommand(): Command {
         });
         output(result, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -63,8 +61,7 @@ export function orgCommand(): Command {
         });
         output(result, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -83,8 +80,7 @@ export function orgCommand(): Command {
         });
         output(result, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -98,8 +94,7 @@ export function orgCommand(): Command {
         const result = await listTeamMembers(config, { team_id: teamId });
         output(result, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -114,8 +109,7 @@ export function orgCommand(): Command {
         const result = await billingOverview(config, { org_id: options.orgId });
         output(result, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -130,8 +124,7 @@ export function orgCommand(): Command {
         const result = await listInvoices(config, { org_id: options.orgId });
         output(result, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -146,8 +139,7 @@ export function orgCommand(): Command {
         const result = await orgDomains(config, { org_id: options.orgId });
         output(result, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -162,8 +154,7 @@ export function orgCommand(): Command {
         const result = await aiCreditUsage(config, { team_id: teamId, plan_id: options.planId });
         output(result, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -178,8 +169,7 @@ export function orgCommand(): Command {
         const msg = await exportMembers(config, { org_id: options.orgId });
         output({ message: msg }, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -198,8 +188,7 @@ export function orgCommand(): Command {
         });
         output(result, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -214,8 +203,7 @@ export function orgCommand(): Command {
         const result = await contractRates(config, { org_id: options.orgId });
         output(result, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -244,8 +232,7 @@ export function orgCommand(): Command {
           output(result, options);
         }
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -275,13 +262,12 @@ export function orgCommand(): Command {
           emails: options.emails,
           start_time: options.start,
           end_time: options.end,
-          page_size: options.pageSize ? parseInt(options.pageSize, 10) : undefined,
+          page_size: options.pageSize ? Number(options.pageSize) : undefined,
           after: options.after,
         });
-        output(result, options);
+        output(result, { ...options, collection: 'entries' });
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -296,8 +282,7 @@ export function orgCommand(): Command {
         const result = await listPayments(config, { org_id: options.orgId });
         output(result, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -320,8 +305,7 @@ export function orgCommand(): Command {
         });
         output({ message: msg }, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -350,8 +334,7 @@ export function orgCommand(): Command {
         });
         output(result, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -365,8 +348,7 @@ export function orgCommand(): Command {
         const msg = await deleteUserGroups(config, { user_group_ids: ids });
         output({ message: msg }, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -380,8 +362,7 @@ export function orgCommand(): Command {
         const result = await addUserGroupMembers(config, { user_group_id: groupId, emails });
         output(result, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -395,8 +376,7 @@ export function orgCommand(): Command {
         const result = await removeUserGroupMembers(config, { user_group_id: groupId, user_ids: userIds });
         output({ message: result }, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 

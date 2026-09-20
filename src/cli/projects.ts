@@ -1,14 +1,13 @@
 import { Command } from 'commander';
 import {
   createProject,
-  renameProject,
   moveProject,
-  trashProject,
+  renameProject,
   restoreProject,
   setProjectDescription,
+  trashProject,
 } from '../operations/projects.js';
-import { output, error } from './format.js';
-import { formatApiError } from '../helpers.js';
+import { fail, output } from './format.js';
 import { requireCookie } from './helpers.js';
 
 export function projectsCommand(): Command {
@@ -26,8 +25,7 @@ export function projectsCommand(): Command {
         const result = await createProject(config, { team_id: teamId, name: options.name });
         output(result, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -42,8 +40,7 @@ export function projectsCommand(): Command {
         await renameProject(config, { project_id: projectId, name: options.name });
         output({ renamed: projectId, name: options.name }, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -61,8 +58,7 @@ export function projectsCommand(): Command {
         });
         output({ moved: projectId, destination_team_id: options.destination }, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -75,14 +71,12 @@ export function projectsCommand(): Command {
         const config = requireCookie();
         const { confirmAction } = await import('./helpers.js');
         if (!await confirmAction(`Trash project ${projectId} and all its files?`)) {
-          console.log('Cancelled.');
-          return;
+          throw new Error('Cancelled. No changes made.');
         }
         await trashProject(config, { project_id: projectId });
         output({ trashed: projectId }, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -96,8 +90,7 @@ export function projectsCommand(): Command {
         await restoreProject(config, { project_id: projectId });
         output({ restored: projectId }, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -115,8 +108,7 @@ export function projectsCommand(): Command {
         });
         output({ updated: projectId }, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 

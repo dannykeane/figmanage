@@ -1,0 +1,52 @@
+name: CI
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - run: npm run lint
+      - run: npm test
+      - name: Check private release tooling when present
+        run: if [ -f scripts/release-check.mjs ]; then node --test scripts/release-check.mjs; fi
+      - run: npm pack --ignore-scripts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: package
+          path: figmanage-*.tgz
+  runtime:
+    needs: check
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        node: [18, 20, 22, 24]
+        include:
+          - os: macos-latest
+            node: 22
+          - os: windows-latest
+            node: 22
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: package
+          path: package-artifact
+      - run: npm install --prefix "$RUNNER_TEMP/figmanage-smoke" --ignore-scripts --engine-strict "$PWD"/package-artifact/figmanage-*.tgz
+      - run: node test/runtime-smoke.mjs "$RUNNER_TEMP/figmanage-smoke/node_modules/figmanage/dist/index.js"

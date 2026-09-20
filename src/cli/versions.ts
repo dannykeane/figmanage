@@ -1,8 +1,7 @@
 import { Command } from 'commander';
-import { listVersions, createVersion } from '../operations/versions.js';
-import { output, error } from './format.js';
-import { formatApiError } from '../helpers.js';
-import { requirePat, requireCookie } from './helpers.js';
+import { createVersion, listVersions } from '../operations/versions.js';
+import { fail, output } from './format.js';
+import { requireCookie, requirePat } from './helpers.js';
 
 export function versionsCommand(): Command {
   const versions = new Command('versions')
@@ -18,8 +17,7 @@ export function versionsCommand(): Command {
         const result = await listVersions(config, { file_key: fileKey });
         output(result, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -43,8 +41,7 @@ export function versionsCommand(): Command {
         });
         output(result, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 

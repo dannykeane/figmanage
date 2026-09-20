@@ -1,7 +1,6 @@
 import { Command } from 'commander';
-import { listBranches, createBranch, deleteBranch } from '../operations/branching.js';
-import { output, error } from './format.js';
-import { formatApiError } from '../helpers.js';
+import { createBranch, deleteBranch, listBranches } from '../operations/branching.js';
+import { fail, output } from './format.js';
 import { requireAuth, requireCookie } from './helpers.js';
 
 export function branchingCommand(): Command {
@@ -18,8 +17,7 @@ export function branchingCommand(): Command {
         const result = await listBranches(config, { file_key: fileKey });
         output(result, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -34,8 +32,7 @@ export function branchingCommand(): Command {
         const result = await createBranch(config, { file_key: fileKey, name: options.name });
         output(result, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 
@@ -48,14 +45,12 @@ export function branchingCommand(): Command {
         const config = requireCookie();
         const { confirmAction } = await import('./helpers.js');
         if (!await confirmAction(`Delete branch ${branchKey}?`)) {
-          console.log('Cancelled.');
-          return;
+          throw new Error('Cancelled. No changes made.');
         }
         await deleteBranch(config, { branch_key: branchKey });
         output({ archived: branchKey }, options);
       } catch (e: any) {
-        error(formatApiError(e));
-        process.exit(1);
+        fail(e);
       }
     });
 

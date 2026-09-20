@@ -1,15 +1,15 @@
-import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { AuthConfig } from '../auth/client.js';
-import { defineTool, toolResult, toolError, toolSummary, figmaId } from './register.js';
 import { formatApiError } from '../helpers.js';
 import {
+  ENTERPRISE_ERROR,
+  isEnterpriseScopeError,
   listLocalVariables,
   listPublishedVariables,
   updateVariables,
-  isEnterpriseScopeError,
-  ENTERPRISE_ERROR,
 } from '../operations/variables.js';
+import { inputSchemas } from '../schemas.js';
+import { defineTool, toolError, toolSummary } from './register.js';
 
 // -- list_local_variables --
 
@@ -21,9 +21,7 @@ defineTool({
       'list_local_variables',
       {
         description: 'List local variables and variable collections in a file. Requires Enterprise plan.',
-        inputSchema: {
-          file_key: figmaId.describe('File key'),
-        },
+        inputSchema: inputSchemas.list_local_variables,
       },
       async ({ file_key }) => {
         try {
@@ -50,9 +48,7 @@ defineTool({
       'list_published_variables',
       {
         description: 'List published variables from a library file. Requires Enterprise plan.',
-        inputSchema: {
-          file_key: figmaId.describe('File key'),
-        },
+        inputSchema: inputSchemas.list_published_variables,
       },
       async ({ file_key }) => {
         try {
@@ -80,13 +76,7 @@ defineTool({
       'update_variables',
       {
         description: 'Bulk create, update, or delete variables, collections, modes, and mode values. Requires Enterprise plan. Each operation object needs an action field (CREATE, UPDATE, or DELETE). Deletions are immediate and cannot be undone -- list variables first to verify IDs.',
-        inputSchema: {
-          file_key: figmaId.describe('File key'),
-          variable_collections: z.array(z.record(z.any())).optional().describe('Collection operations (action: CREATE, UPDATE, or DELETE)'),
-          variable_modes: z.array(z.record(z.any())).optional().describe('Mode operations (action: CREATE, UPDATE, or DELETE)'),
-          variables: z.array(z.record(z.any())).optional().describe('Variable operations (action: CREATE, UPDATE, or DELETE)'),
-          variable_mode_values: z.array(z.record(z.any())).optional().describe('Value assignments (action: CREATE, UPDATE, or DELETE)'),
-        },
+        inputSchema: inputSchemas.update_variables,
       },
       async ({ file_key, variable_collections, variable_modes, variables, variable_mode_values }) => {
         try {

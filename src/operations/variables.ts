@@ -1,3 +1,4 @@
+import { validateInput } from '../validation.js';
 import type { AuthConfig } from '../auth/client.js';
 import { publicClient } from '../clients/public-api.js';
 
@@ -16,6 +17,7 @@ export async function listLocalVariables(
   config: AuthConfig,
   params: { file_key: string },
 ): Promise<Record<string, any>> {
+  validateInput('list_local_variables', params);
   const res = await publicClient(config).get(`/v1/files/${params.file_key}/variables/local`);
   return res.data?.meta ?? {};
 }
@@ -24,6 +26,7 @@ export async function listPublishedVariables(
   config: AuthConfig,
   params: { file_key: string },
 ): Promise<Record<string, any>> {
+  validateInput('list_published_variables', params);
   const res = await publicClient(config).get(`/v1/files/${params.file_key}/variables/published`);
   return res.data?.meta ?? {};
 }
@@ -38,6 +41,7 @@ export async function updateVariables(
     variable_mode_values?: Record<string, any>[];
   },
 ): Promise<any> {
+  validateInput('update_variables', params);
   if (
     !params.variable_collections?.length &&
     !params.variable_modes?.length &&

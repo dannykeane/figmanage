@@ -214,7 +214,7 @@ describe('restore_files', () => {
 
   it('restores files successfully', async () => {
     const handler = getHandler('restore_files', cookieOnlyConfig());
-    mockInternalAxios.post.mockResolvedValueOnce(axiosResponse({}));
+    mockInternalAxios.post.mockResolvedValueOnce(axiosResponse({ meta: { success: { 'file-1': true, 'file-2': true } } }));
 
     const result = await handler({ file_keys: ['file-1', 'file-2'] });
 

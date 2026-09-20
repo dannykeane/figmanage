@@ -1,6 +1,14 @@
+export interface CredentialStatus {
+  valid: boolean;
+  user?: string;
+  user_id?: string;
+  error?: string;
+  reason?: 'missing' | 'expired' | 'permission_denied' | 'check_failed';
+}
+
 export interface AuthStatus {
-  pat: { valid: boolean; user?: string; error?: string };
-  cookie: { valid: boolean; user?: string; error?: string };
+  pat: CredentialStatus;
+  cookie: CredentialStatus;
 }
 
 export interface FigmaTeam {

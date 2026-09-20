@@ -1,9 +1,9 @@
-import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { AuthConfig } from '../auth/client.js';
-import { defineTool, toolResult, toolError, toolSummary, figmaId } from './register.js';
 import { formatApiError } from '../helpers.js';
-import { libraryUsage, componentUsage } from '../operations/analytics.js';
+import { componentUsage, libraryUsage } from '../operations/analytics.js';
+import { inputSchemas } from '../schemas.js';
+import { defineTool, toolError, toolSummary } from './register.js';
 
 // -- library_usage --
 
@@ -16,10 +16,7 @@ defineTool({
       'library_usage',
       {
         description: 'Team-level library adoption metrics. Shows how a published library is used across teams.',
-        inputSchema: {
-          library_file_key: figmaId.describe('File key of the library'),
-          days: z.number().optional().describe('Lookback period in days (default 30). Suggest 30, 60, 90, or 365.'),
-        },
+        inputSchema: inputSchemas.library_usage,
       },
       async ({ library_file_key, days }) => {
         try {
@@ -44,10 +41,7 @@ defineTool({
       'component_usage',
       {
         description: 'Per-file component usage analytics. Shows which files use a specific component.',
-        inputSchema: {
-          component_key: figmaId.describe('Component key'),
-          org_id: figmaId.optional().describe('Org ID override (defaults to current workspace)'),
-        },
+        inputSchema: inputSchemas.component_usage,
       },
       async ({ component_key, org_id }) => {
         try {

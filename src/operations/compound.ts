@@ -1,6 +1,8 @@
+import { validateInput } from '../validation.js';
 import type { AuthConfig } from '../auth/client.js';
 import { hasPat, hasCookie } from '../auth/client.js';
 import { publicClient } from '../clients/public-api.js';
+import { publicFolderFiles } from '../clients/folders.js';
 import { internalClient } from '../clients/internal-api.js';
 import { requireOrgId, formatApiError } from '../helpers.js';
 
@@ -39,6 +41,7 @@ export async function fileSummary(
   config: AuthConfig,
   params: { file_key: string },
 ) {
+  validateInput('file_summary', params);
   const api = publicClient(config);
   const [fileResult, componentsResult, stylesResult, commentsResult] = await Promise.allSettled([
     api.get(`/v1/files/${params.file_key}`, { params: { depth: '1' } }),
@@ -76,6 +79,7 @@ export async function workspaceOverview(
   config: AuthConfig,
   params: { org_id?: string },
 ) {
+  validateInput('workspace_overview', params);
   const orgId = requireOrgId(config, params.org_id);
   const api = internalClient(config);
 
@@ -119,9 +123,9 @@ export async function openComments(
   config: AuthConfig,
   params: { project_id: string },
 ) {
+  validateInput('open_comments', params);
   const api = publicClient(config);
-  const filesRes = await api.get(`/v1/projects/${params.project_id}/files`);
-  const allFiles: any[] = filesRes.data?.files || [];
+  const allFiles = await publicFolderFiles(config, params.project_id);
   const capped = allFiles.length > 20;
   const files = allFiles.slice(0, 20);
 
@@ -178,6 +182,7 @@ export async function cleanupStaleFiles(
   config: AuthConfig,
   params: { project_id: string; days_stale: number; dry_run: boolean },
 ) {
+  validateInput('cleanup_stale_files', params);
   const { project_id, days_stale, dry_run } = params;
 
   if (!dry_run && !hasCookie(config)) {
@@ -187,8 +192,7 @@ export async function cleanupStaleFiles(
   let files: any[];
 
   if (hasPat(config)) {
-    const res = await publicClient(config).get(`/v1/projects/${project_id}/files`);
-    files = res.data?.files || [];
+    files = await publicFolderFiles(config, project_id);
   } else {
     const res = await internalClient(config).get(
       `/api/folders/${project_id}/paginated_files`,
@@ -243,6 +247,7 @@ export async function organizeProject(
   config: AuthConfig,
   params: { file_keys: string[]; target_project_id: string },
 ) {
+  validateInput('organize_project', params);
   const payload = {
     files: params.file_keys.map(key => ({
       key,
@@ -272,6 +277,7 @@ export async function setupProjectStructure(
   config: AuthConfig,
   params: { team_id: string; projects: Array<{ name: string; description?: string }> },
 ) {
+  validateInput('setup_project_structure', params);
   const api = internalClient(config);
   const created: any[] = [];
   const failed: any[] = [];
@@ -312,6 +318,7 @@ export async function seatOptimization(
   config: AuthConfig,
   params: { org_id?: string; days_inactive: number; include_cost: boolean },
 ) {
+  validateInput('seat_optimization', params);
   const { days_inactive, include_cost } = params;
   const orgId = requireOrgId(config, params.org_id);
   const api = internalClient(config);
@@ -443,6 +450,7 @@ export async function permissionAudit(
   config: AuthConfig,
   params: { scope_type: 'project' | 'team'; scope_id: string; flag_external: boolean; org_id?: string },
 ) {
+  validateInput('permission_audit', params);
   const { scope_type, scope_id, flag_external } = params;
   const api = internalClient(config);
 
@@ -612,6 +620,7 @@ export async function branchCleanup(
   config: AuthConfig,
   params: { project_id: string; days_stale: number; dry_run: boolean },
 ) {
+  validateInput('branch_cleanup', params);
   const { project_id, days_stale, dry_run } = params;
 
   if (!dry_run && !hasCookie(config)) {
@@ -622,8 +631,7 @@ export async function branchCleanup(
   const MAX_FILES = 20;
   let files: any[];
   if (hasPat(config)) {
-    const res = await publicClient(config).get(`/v1/projects/${project_id}/files`);
-    files = res.data?.files || [];
+    files = await publicFolderFiles(config, project_id);
   } else {
     const res = await internalClient(config).get(
       `/api/folders/${project_id}/paginated_files`,
