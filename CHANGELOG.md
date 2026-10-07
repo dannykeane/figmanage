@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.5.1
+
+- Add AGENTS.md: build, test and contribution rules for AI coding agents.
+
 ## 1.5.0
 
 - Generate credential-free MCP configuration for Claude Code, Claude Desktop, Codex, Cursor, VS Code, and generic clients. Support JSON/JSONL setup metadata, read-only presets, Windows launchers, and absolute local paths.
